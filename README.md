@@ -360,9 +360,9 @@ Dependencies are declared in `pyproject.toml` and resolved in `uv.lock`. Install
 
 | Name | Role |
 |---|---|
-| Alan Wu | Algorithm design, full-stack development |
-| Michelle | Hardware / electronics integration |
-| Spencer | Software development |
-| Ashee | Research, HCI, user studies |
+| Ashee | BCI Lead |
+| Spencer | BCI Lead |
+| Alan | BCI Sub-team member |
+| Michelle | BCI Sub-team member |
 
 Cornell CUXR Lab
