@@ -542,35 +542,12 @@ class Collector:
     def _write_eeg_csv(self) -> None:
         with self._sample_lock:
             samples = list(self._sample_buffer)
-        fieldnames = ["timestamp", "marker_code", "marker_label"] + list(CH_NAMES)
-        with self.eeg_csv_path.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for s in samples:
-                writer.writerow({
-                    "timestamp": f"{s['timestamp']:.6f}",
-                    "marker_code": s.get("marker_code") if s.get("marker_code") is not None else "",
-                    "marker_label": s.get("marker_label") or "",
-                    **{ch: f"{s[ch]:.6f}" for ch in CH_NAMES},
-                })
+        write_eeg_csv(self.eeg_csv_path, samples)
 
     def _write_trial_log_csv(self) -> None:
-        with self.trial_log_path.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=TrialRow.fieldnames())
-            writer.writeheader()
-            for row in self._trials:
-                writer.writerow(asdict(row))
+        write_trial_log_csv(self.trial_log_path, self._trials)
 
     def _write_metadata_yaml(self) -> None:
-        # Hand-rolled YAML to avoid an extra runtime dep; values are
-        # primitive and quoted carefully.
-        def _q(v: object) -> str:
-            if isinstance(v, bool):
-                return "true" if v else "false"
-            if isinstance(v, (int, float)):
-                return str(v)
-            return f"\"{str(v)}\""
-
         meta = {
             "session_id": self.session_id,
             "participant_id": self.participant,
@@ -593,13 +570,52 @@ class Collector:
             "mock": self.mock,
             "notes": self.notes,
         }
-        with self.metadata_path.open("w") as f:
-            for k, v in meta.items():
-                if isinstance(v, list):
-                    items = ", ".join(_q(x) for x in v)
-                    f.write(f"{k}: [{items}]\n")
-                else:
-                    f.write(f"{k}: {_q(v) if v is not None else 'null'}\n")
+        write_metadata_yaml(self.metadata_path, meta)
+
+
+# ── Session file writers (shared with backend.calibration) ─────────
+
+
+def write_eeg_csv(path: Path, samples: list[dict]) -> None:
+    """Write per-sample dicts (timestamp, marker_code, marker_label, CH_NAMES)."""
+    fieldnames = ["timestamp", "marker_code", "marker_label"] + list(CH_NAMES)
+    with Path(path).open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for s in samples:
+            writer.writerow({
+                "timestamp": f"{s['timestamp']:.6f}",
+                "marker_code": s.get("marker_code") if s.get("marker_code") is not None else "",
+                "marker_label": s.get("marker_label") or "",
+                **{ch: f"{s[ch]:.6f}" for ch in CH_NAMES},
+            })
+
+
+def write_trial_log_csv(path: Path, rows: list[TrialRow]) -> None:
+    with Path(path).open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=TrialRow.fieldnames())
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(asdict(row))
+
+
+def write_metadata_yaml(path: Path, meta: dict) -> None:
+    # Hand-rolled YAML to avoid an extra runtime dep; values are
+    # primitive and quoted carefully.
+    def _q(v: object) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, (int, float)):
+            return str(v)
+        return f"\"{str(v)}\""
+
+    with Path(path).open("w") as f:
+        for k, v in meta.items():
+            if isinstance(v, list):
+                items = ", ".join(_q(x) for x in v)
+                f.write(f"{k}: [{items}]\n")
+            else:
+                f.write(f"{k}: {_q(v) if v is not None else 'null'}\n")
 
 
 # ── CLI ─────────────────────────────────────────────────────────────

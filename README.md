@@ -64,6 +64,17 @@ uv run python src/pilot_data_collection/stream_save_muse.py
 uv run python src/pilot_data_collection/stream_save_muse.py --serial Muse-15C3
 ```
 
+## App Backend
+
+The macOS app uses a local service that runs the whole user flow (connect → calibrate on left/right/blink → train a personal model → stream to the Quest) behind a localhost API:
+
+```bash
+uv run python -m backend --board simulated --no-auth   # no headset needed
+uv run python -m backend --serial Muse-15C3            # real Muse
+```
+
+See [backend/README.md](backend/README.md) for the API contract and events.
+
 ## Run the Unity Navigation System
 
 With the Muse 2 on and the Quest app running `FreeNavScene`, connect the Quest
