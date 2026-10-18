@@ -21,6 +21,9 @@ dependencies = [
     "scikit-learn",
     "pandas",
     "torch",
+    "fastapi>=0.146.0",
+    "uvicorn>=0.54.0",
+    "websockets>=12",
 ]
 
 
@@ -34,3 +37,9 @@ license-files = ["LICEN[CS]E*"]
 [project.urls]
 Homepage = "https://github.com/CUXR/bci"
 Issues = "https://github.com/CUXR/bci/issues"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]

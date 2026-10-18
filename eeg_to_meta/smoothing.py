@@ -47,9 +47,25 @@ class PredictionSmoother:
                 "smoothed"  : bool — always True (marks this as post-smoothing)
                 "raw_label" : str  — the unsmoothed label from this tick
         """
-        self._history.append(prediction)
-
         raw_label = prediction["label"]
+
+        # Blinks are single-tick events: the engine fires at most one per
+        # BLINK_COOLDOWN_S, so a majority vote over SMOOTHING_WINDOW ticks
+        # would always suppress them. Pass them straight through, and keep
+        # them out of the history so they don't disturb the MI vote.
+        if raw_label == CLASS_NAMES["blink"]:
+            return {
+                "label": raw_label,
+                "internal_label": prediction.get("internal_label", "blink"),
+                "raw_label": raw_label,
+                "confidence": round(prediction.get("confidence", 0.0), 4),
+                "raw_probs": prediction.get("raw_probs", {}),
+                "stable": True,
+                "smoothed": True,
+                "latency_ms": prediction.get("latency_ms", 0.0),
+            }
+
+        self._history.append(prediction)
 
         # Majority vote across the window
         label_counts: dict[str, int] = {}
