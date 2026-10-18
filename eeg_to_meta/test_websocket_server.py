@@ -29,6 +29,23 @@ class SlowSocket(RecordingSocket):
 
 
 class JsonWSServerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_quality_is_sent_during_idle_without_using_navigation_slot(self):
+        server = JsonWSServer()
+        socket = RecordingSocket()
+        server._clients.add(socket)
+        await server.broadcast({"label": "idle"})
+        report = {"type": "signal_quality", "channels": {"AF7": {"status": "poor"}}}
+        await server.broadcast_quality(report)
+        self.assertEqual(socket.frames, [report])
+        self.assertEqual(server._last_navigation_sent_at, float("-inf"))
+
+    async def test_slow_quality_client_is_removed_without_waiting_forever(self):
+        server = JsonWSServer()
+        socket = SlowSocket()
+        server._clients.add(socket)
+        await asyncio.wait_for(server.broadcast_quality({"type": "signal_quality"}), timeout=0.5)
+        self.assertNotIn(socket, server._clients)
+
     async def test_only_one_valid_navigation_command_per_three_seconds(self):
         server = JsonWSServer()
         socket = RecordingSocket()

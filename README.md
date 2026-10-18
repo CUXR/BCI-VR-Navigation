@@ -64,6 +64,20 @@ uv run python src/pilot_data_collection/stream_save_muse.py
 uv run python src/pilot_data_collection/stream_save_muse.py --serial Muse-15C3
 ```
 
+## Check Muse Signal Quality
+
+Check TP9, AF7, AF8, and TP10 individually before recording:
+
+```bash
+uv run python -m src.signal_quality --serial 15C3
+# Without a headband:
+uv run python -m src.signal_quality --simulate --seconds 10
+```
+
+The backend reports signal quality separately from transport/recording errors.
+The current recorder and Unity inference pipeline include live monitoring.
+See [signal-quality setup, thresholds, and validation](docs/signal-quality.md).
+
 ## Run the Unity Navigation System
 
 With the Muse 2 on and the Quest app running `FreeNavScene`, connect the Quest

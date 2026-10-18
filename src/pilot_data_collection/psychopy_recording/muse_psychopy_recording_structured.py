@@ -28,7 +28,6 @@ from pathlib import Path
 from enum import Enum
 
 import numpy as np
-from psychopy import visual, core, event
 from brainflow.board_shim import (
     BoardIds,
     BoardShim,
@@ -36,6 +35,10 @@ from brainflow.board_shim import (
     BrainFlowInputParams,
     BrainFlowPresets,
 )
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from src.signal_quality import CsvRecorder, QualityConfig, QualityMonitor
+from src.signal_quality.quality import format_quality
 
 # Text-to-speech setup
 def speak_text(text, wait=True):
@@ -212,17 +215,22 @@ class MusePsychopyRecorder:
         
         self.eeg_output_file = os.path.join(output_dir, f"eeg_data_{timestamp}.csv")
         self.trial_log_file = os.path.join(output_dir, f"trial_log_{timestamp}.csv")
+        self.quality_output_file = os.path.join(output_dir, f"signal_quality_{timestamp}.jsonl")
         
         self.board = None
         self.is_streaming = False
         self.is_recording = False
         
         # Data collection
-        self.data_buffer = []
+        self._csv_recorder = None
+        self.quality = None
+        self.recording_error = None
         self.trials = []  # List of Trial objects
         self.current_trial = None
         self.recording_thread = None
         self.stop_recording_flag = threading.Event()
+        self._flush_recording = threading.Event()
+        self._recording_flushed = threading.Event()
         self.buffer_lock = threading.Lock()
         self.trial_lock = threading.Lock()  # Lock for trial access
         
@@ -237,6 +245,7 @@ class MusePsychopyRecorder:
         self.eeg_channels = None
         self.marker_channel = None
         self.timestamp_channel = None
+        self.packet_channel = None
         
         # Blink extraction window
         self.blink_window_ms = blink_window_ms
@@ -282,6 +291,7 @@ class MusePsychopyRecorder:
                     self.eeg_channels = self.eeg_channels[:4]
                 self.marker_channel = BoardShim.get_marker_channel(self.board_id)
                 self.timestamp_channel = BoardShim.get_timestamp_channel(self.board_id)
+                self.packet_channel = BoardShim.get_package_num_channel(self.board_id)
 
                 print(f"{device_label} connected successfully.")
                 return True
@@ -311,6 +321,8 @@ class MusePsychopyRecorder:
             
         if self.is_recording:
             self.stop_recording()
+        if self.is_streaming:
+            self.stop_streaming()
             
         try:
             self.board.release_session()
@@ -331,258 +343,165 @@ class MusePsychopyRecorder:
             return True
             
         try:
+            self.quality = QualityMonitor(QualityConfig(sfreq=self.sampling_rate),
+                                          output=self.quality_output_file,
+                                          source="synthetic" if self.simulate else "muse",
+                                          muse_packets=not self.simulate)
+            self.quality.start()
             self.board.start_stream()
             self.is_streaming = True
             self.session_start_time = time.time()
-            print("Streaming started.")
+            self.stop_recording_flag.clear()
+            self.recording_thread = threading.Thread(target=self._collect_data, daemon=True)
+            self.recording_thread.start()
+            print("Streaming started; checking electrode quality.")
             return True
-        except BrainFlowError as e:
-            print(f"BrainFlow error while starting stream: {e}")
+        except Exception as exc:
+            if self.is_streaming:
+                self.board.stop_stream()
+            self.is_streaming = False
+            if self.quality is not None:
+                self.quality.stop()
+            print(f"Error while starting stream: {exc}")
             return False
-        except Exception as e:
-            print(f"Unexpected error while starting stream: {e}")
-            return False
-    
+
     def stop_streaming(self):
-        """Stop streaming data from MUSE."""
+        """Stop the sole reader before stopping/releasing BrainFlow."""
         if self.board is None or not self.is_streaming:
             return
-            
+        if self.is_recording:
+            self.stop_recording()
+        self.stop_recording_flag.set()
+        if self.recording_thread is not None:
+            self.recording_thread.join(timeout=3)
+            if self.recording_thread.is_alive():
+                raise RuntimeError("EEG reader did not stop")
         try:
             self.board.stop_stream()
+        finally:
             self.is_streaming = False
-            print("Streaming stopped.")
-        except BrainFlowError as e:
-            print(f"BrainFlow error while stopping stream: {e}")
-        except Exception as e:
-            print(f"Unexpected error while stopping stream: {e}")
-    
+            if self.quality is not None:
+                self.quality.stop()
+        print("Streaming stopped.")
+
+    @property
+    def signal_quality(self):
+        return self.quality.latest if self.quality is not None else None
+
+    def _record_rows(self, samples):
+        rows = []
+        for sample in samples:
+            row = {"timestamp": sample["timestamp"],
+                   "marker_code": sample["marker_code"] if sample["marker_code"] is not None else "",
+                   "marker_label": sample["marker_label"] or ""}
+            for i in range(4):
+                row[f"EEG_{i}"] = sample["eeg_data"][i] if i < len(sample["eeg_data"]) else ""
+            rows.append(row)
+        try:
+            self._csv_recorder.submit(rows)
+        except RuntimeError as exc:
+            if self.recording_error is None:
+                print(f"RECORDING INCOMPLETE: {exc}")
+            self.recording_error = str(exc)
+        self.quality.set_health(recording_error=self._csv_recorder.error,
+                                recording_backlog_batches=self._csv_recorder.backlog,
+                                rejected_recording_samples=self._csv_recorder.rejected_samples)
+
     def _collect_data(self):
-        """Background thread to collect data and markers."""
-        start_time = None
-        last_sample_count = 0
-        
+        """Continuously drain BrainFlow, including while fitting the headband."""
+        last_report = 0.0
         while not self.stop_recording_flag.is_set():
-            if not self.is_streaming:
-                time.sleep(0.1)
-                continue
-                
             try:
-                # Get all accumulated board data since last call
+                flush_requested = self._flush_recording.is_set()
                 data = self.board.get_board_data()
-                
-                # Initialize start time on first data collection
-                if start_time is None:
-                    start_time = time.time()
-                
-                if data.shape[1] > 0:
-                    # Get timestamp channel
-                    if self.timestamp_channel is not None and self.timestamp_channel < data.shape[0]:
-                        timestamps = data[self.timestamp_channel, :]
-                    else:
-                        timestamps = None
-                    
-                    # Process each sample
-                    for i in range(data.shape[1]):
-                        # Use BrainFlow timestamp if available, otherwise calculate from start
-                        if timestamps is not None and len(timestamps) > i and timestamps[i] > 0:
-                            sample_time = timestamps[i]
-                        else:
-                            # Fallback: calculate from start time and sample index
-                            if self.sampling_rate:
-                                sample_time = start_time + (i + last_sample_count) / self.sampling_rate
-                            else:
-                                sample_time = time.time()
-                        
-                        # Check for markers in this sample
-                        if self.marker_channel is not None and self.marker_channel < data.shape[0]:
-                            marker_val = data[self.marker_channel, i]
-                            if marker_val > 0:
-                                # Find matching marker
-                                for label, (code, _) in self.markers.items():
-                                    if abs(marker_val - code) < 0.1:
-                                        # Add marker as separate row with empty EEG
-                                        with self.buffer_lock:
-                                            marker_sample = {
-                                                'timestamp': sample_time,
-                                                'eeg_data': [],
-                                                'marker_code': code,
-                                                'marker_label': self.markers[label][1],
-                                            }
-                                            self.data_buffer.append(marker_sample)
+                n = data.shape[1]
+                if n:
+                    timestamps = data[self.timestamp_channel]
+                    eeg = data[self.eeg_channels[:4]]
+                    self.quality.feed(eeg, timestamps,
+                                      data[self.packet_channel] if not self.simulate else None)
+                    with self.buffer_lock:
+                        if self.is_recording:
+                            samples = []
+                            for i in range(n):
+                                ts = float(timestamps[i])
+                                marker = data[self.marker_channel, i]
+                                for code, label in self.markers.values():
+                                    if marker > 0 and abs(marker - code) < 0.1:
+                                        samples.append({"timestamp": ts, "eeg_data": [],
+                                                        "marker_code": code, "marker_label": label})
                                         break
-                        
-                        # Extract EEG channels (only for non-marker samples)
-                        eeg_data = []
-                        if len(self.eeg_channels) > 0:
-                            for ch_idx in self.eeg_channels:
-                                if ch_idx < data.shape[0]:
-                                    eeg_data.append(float(data[ch_idx, i]))
-                        
-                        # Store EEG sample
-                        with self.buffer_lock:
-                            sample = {
-                                'timestamp': sample_time,
-                                'eeg_data': eeg_data,
-                                'marker_code': None,
-                                'marker_label': None,
-                            }
-                            self.data_buffer.append(sample)
-                    
-                    last_sample_count += data.shape[1]
-                    if len(self.data_buffer) % 1000 == 0:
-                        print(f"Collected {len(self.data_buffer)} samples...")
-                
-                # Sleep to control collection rate
-                time.sleep(0.1)
-                
-            except Exception as e:
-                print(f"Error collecting data: {e}")
-                import traceback
-                traceback.print_exc()
-                time.sleep(0.1)
-    
+                                samples.append({"timestamp": ts, "eeg_data": eeg[:, i].tolist(),
+                                                "marker_code": None, "marker_label": None})
+                            self._record_rows(samples)
+                if flush_requested:
+                    with self.buffer_lock:
+                        self.is_recording = False
+                    self._recording_flushed.set()
+                    self._flush_recording.clear()
+                self.quality.set_health(board_backlog_samples=self.board.get_board_data_count())
+            except Exception as exc:
+                self.quality.set_health(reader_error=str(exc))
+                self.recording_error = f"EEG reader failed: {exc}"
+                print(self.recording_error)
+                return
+            if time.monotonic() - last_report >= 0.5:
+                print(format_quality(self.signal_quality))
+                last_report = time.monotonic()
+            self.stop_recording_flag.wait(0.02)
+
     def start_recording(self):
-        """Start recording data to file."""
-        if not self.is_streaming:
-            print("Cannot start recording: streaming not started.")
+        if not self.is_streaming or not self.recording_thread.is_alive():
+            print("Cannot record: EEG reader is not running.")
             return False
         if self.is_recording:
-            print("Recording already in progress.")
             return True
-            
-        self.is_recording = True
-        self.data_buffer = []
-        self.trials = []
-        self.stop_recording_flag.clear()
-        
-        # Start data collection thread
-        self.recording_thread = threading.Thread(target=self._collect_data, daemon=True)
-        self.recording_thread.start()
-        
+        with self.buffer_lock:
+            self._csv_recorder = CsvRecorder(self.eeg_output_file,
+                                            ['timestamp', 'marker_code', 'marker_label'] +
+                                            [f'EEG_{i}' for i in range(4)])
+            try:
+                self._csv_recorder.start()
+            except OSError as exc:
+                self.recording_error = str(exc)
+                self.quality.set_health(recording_error=self.recording_error)
+                print(f"Cannot start recording: {exc}")
+                return False
+            self.trials = []
+            self._flush_recording.clear()
+            self._recording_flushed.clear()
+            self.recording_error = None
+            self.is_recording = True
         print("Recording started.")
         return True
-    
+
     def stop_recording(self):
-        """Stop recording and save data to files."""
         if not self.is_recording:
             return
-            
-        print("Stopping recording...")
-        self.is_recording = False
-        self.stop_recording_flag.set()
-        
-        # Finalize any active trial
         if self.current_trial is not None:
             self.end_trial()
-        
-        # Wait for thread to finish
-        if self.recording_thread is not None:
-            self.recording_thread.join(timeout=3.0)
-        
-        # Get any remaining data from the board buffer
-        try:
-            if self.board is not None and self.is_streaming:
-                remaining_data = self.board.get_board_data()
-                if remaining_data.shape[1] > 0:
-                    print(f"Collecting {remaining_data.shape[1]} remaining samples...")
-                    # Process remaining data (similar to _collect_data)
-                    if self.timestamp_channel is not None and self.timestamp_channel < remaining_data.shape[0]:
-                        timestamps = remaining_data[self.timestamp_channel, :]
-                    else:
-                        timestamps = None
-                    
-                    current_time = time.time()
-                    for i in range(remaining_data.shape[1]):
-                        if timestamps is not None and len(timestamps) > i and timestamps[i] > 0:
-                            sample_time = timestamps[i]
-                        else:
-                            sample_time = current_time
-                        
-                        # Check for markers
-                        if self.marker_channel is not None and self.marker_channel < remaining_data.shape[0]:
-                            marker_val = remaining_data[self.marker_channel, i]
-                            if marker_val > 0:
-                                for label, (code, _) in self.markers.items():
-                                    if abs(marker_val - code) < 0.1:
-                                        marker_sample = {
-                                            'timestamp': sample_time,
-                                            'eeg_data': [],
-                                            'marker_code': code,
-                                            'marker_label': self.markers[label][1],
-                                        }
-                                        self.data_buffer.append(marker_sample)
-                                        break
-                        
-                        # Extract EEG channels
-                        eeg_data = []
-                        if len(self.eeg_channels) > 0:
-                            for ch_idx in self.eeg_channels:
-                                if ch_idx < remaining_data.shape[0]:
-                                    eeg_data.append(float(remaining_data[ch_idx, i]))
-                        
-                        sample = {
-                            'timestamp': sample_time,
-                            'eeg_data': eeg_data,
-                            'marker_code': None,
-                            'marker_label': None,
-                        }
-                        self.data_buffer.append(sample)
-        except Exception as e:
-            print(f"Error collecting remaining data: {e}")
-        
-        # Save data to files
+        self._flush_recording.set()
+        if self.recording_thread.is_alive() and not self._recording_flushed.wait(timeout=3):
+            self.recording_error = "EEG reader did not flush the recording tail"
+        with self.buffer_lock:
+            self.is_recording = False
         self._save_eeg_data()
         self._save_trial_log()
-        print(f"Recording stopped. Data saved to {self.eeg_output_file}")
-        print(f"Trial log saved to {self.trial_log_file}")
-    
-    def _save_eeg_data(self):
-        """Save collected EEG data to CSV file."""
-        if len(self.data_buffer) == 0:
-            print("No EEG data to save.")
-            return
-        
-        print(f"Saving {len(self.data_buffer)} EEG samples to {self.eeg_output_file}")
-        
-        # Determine number of EEG channels
-        num_channels = 4  # Default for MUSE
-        if self.eeg_channels is not None:
-            num_channels = len(self.eeg_channels)
+        if self.recording_error:
+            print(f"RECORDING INCOMPLETE: {self.recording_error}")
         else:
-            for sample in self.data_buffer:
-                if len(sample['eeg_data']) > 0:
-                    num_channels = len(sample['eeg_data'])
-                    break
-        
-        eeg_channel_names = [f'EEG_{i}' for i in range(num_channels)]
-        
+            print(f"Recording saved to {self.eeg_output_file}")
+        print(f"Trial log saved to {self.trial_log_file}")
+
+    def _save_eeg_data(self):
         try:
-            with self.buffer_lock:
-                with open(self.eeg_output_file, 'w', newline='') as f:
-                    fieldnames = ['timestamp', 'marker_code', 'marker_label'] + eeg_channel_names
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    
-                    for sample in self.data_buffer:
-                        row = {
-                            'timestamp': sample['timestamp'],
-                            'marker_code': sample['marker_code'] if sample['marker_code'] is not None else '',
-                            'marker_label': sample['marker_label'] if sample['marker_label'] else '',
-                        }
-                        for i, ch_name in enumerate(eeg_channel_names):
-                            if i < len(sample['eeg_data']) and len(sample['eeg_data']) > 0:
-                                row[ch_name] = sample['eeg_data'][i]
-                            else:
-                                row[ch_name] = ''
-                        writer.writerow(row)
-            
-            print(f"Successfully saved {len(self.data_buffer)} EEG samples")
-        except Exception as e:
-            print(f"Error saving EEG data: {e}")
-            import traceback
-            traceback.print_exc()
-    
+            self._csv_recorder.close()
+        except RuntimeError as exc:
+            self.recording_error = str(exc)
+        self.quality.set_health(recording_error=self.recording_error,
+                                recording_backlog_batches=self._csv_recorder.backlog,
+                                rejected_recording_samples=self._csv_recorder.rejected_samples)
+
     def _save_trial_log(self):
         """Save trial log to CSV file per PROGRAMMING_REQUIREMENTS.md"""
         if len(self.trials) == 0:
@@ -693,7 +612,7 @@ class MusePsychopyRecorder:
                     'marker_code': code,
                     'marker_label': label,
                 }
-                self.data_buffer.append(marker_sample)
+                self._record_rows([marker_sample])
             
             # End trial immediately (event-centered)
             self.end_trial()
@@ -735,7 +654,7 @@ class MusePsychopyRecorder:
                     'marker_code': code,
                     'marker_label': label,
                 }
-                self.data_buffer.append(marker_sample)
+                self._record_rows([marker_sample])
             
             print(f"Marker sent: {label} (code={code})")
         except Exception as e:
@@ -756,6 +675,8 @@ def run_experiment():
 
     Press ESC at any time to abort and save data.
     """
+    from psychopy import visual, core, event
+
     # Parse CLI arguments
     parser = argparse.ArgumentParser(description="Muse EEG Motor Imagery Experiment")
     parser.add_argument("--name", required=True, help="Subject's name")
@@ -1047,6 +968,9 @@ def run_experiment():
     instruction_text.draw()
     win.flip()
     
+    fit_quality = visual.TextStim(win, text="", pos=(0, -330), height=16,
+                                  wrapWidth=1180, color=text_color, colorSpace="rgb")
+
     # Wait for ENTER to start
     while True:
         keys = event.getKeys()
@@ -1058,7 +982,14 @@ def run_experiment():
             return
         if 'return' in keys:
             break
-        core.wait(0.01)
+        status_box.draw()
+        status_text.draw()
+        title.draw()
+        instruction_text.draw()
+        fit_quality.text = format_quality(recorder.signal_quality)
+        fit_quality.draw()
+        win.flip()
+        core.wait(0.1)
     
     # Start recording
     if not recorder.start_recording():
@@ -1260,7 +1191,11 @@ def run_experiment():
     recorder.disconnect()
     
     # Show final message
-    instruction_text.text = f"Data saved!\n\nEEG data: {recorder.eeg_output_file}\nTrial log: {recorder.trial_log_file}\n\nPress ESC to exit."
+    if recorder.recording_error:
+        instruction_text.text = f"Recording incomplete: {recorder.recording_error}\n\nPartial EEG data: {recorder.eeg_output_file}\n\nPress ESC to exit."
+        instruction_text.color = error_color
+    else:
+        instruction_text.text = f"Data saved!\n\nEEG data: {recorder.eeg_output_file}\nTrial log: {recorder.trial_log_file}\n\nPress ESC to exit."
     status_box.draw()
     status_text.draw()
     title.draw()

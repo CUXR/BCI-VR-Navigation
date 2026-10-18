@@ -43,6 +43,7 @@ from muse_stream import MuseBrainFlowStream, MockMuseStream
 from inference import InferenceEngine
 from smoothing import PredictionSmoother
 from websocket_server import JsonWSServer
+from src.signal_quality.quality import format_quality
 
 logging.basicConfig(
     level=logging.INFO,
@@ -143,11 +144,19 @@ async def run_pipeline(args):
              MI_WINDOW_SAMPLES, BLINK_WINDOW_SAMPLES)
 
     # ── 4. Inference loop ──────────────────────────────────────────
+    last_quality_at = float("-inf")
     tick = 0
     last_recognized_intent = None
     try:
         while True:
             t0 = time.perf_counter()
+
+            if stream.quality is not None and t0 - last_quality_at >= 0.5:
+                quality = stream.quality.latest
+                log.info("%s", format_quality(quality))
+                if ws_server and quality is not None:
+                    await ws_server.broadcast_quality(quality)
+                last_quality_at = t0
 
             blink_win = buf.get_blink_window()
             mi_win = buf.get_mi_window()
