@@ -89,6 +89,9 @@ struct RecordingView: View {
         let recorder = model.recorder
         ScreenScaffold(width: 760) {
             switch recorder.phase {
+            case .starting:
+                ScreenHeader(title: "Preparing to record", message: "Releasing the headband so the recording window can connect.")
+                ProgressView()
             case .failed(let message):
                 ScreenHeader(title: "Recording could not run", message: message)
                 if !recorder.logTail.isEmpty {
@@ -120,6 +123,7 @@ struct RecordingView: View {
         } trailing: {
             if recorder.isRunning {
                 Button("Force Stop", role: .destructive) { confirmStop = true }
+                    .disabled(recorder.phase == .starting)
                     .confirmationDialog("Force stop the recording?", isPresented: $confirmStop) {
                         Button("Force Stop", role: .destructive) { recorder.forceStop() }
                     } message: {
@@ -130,7 +134,7 @@ struct RecordingView: View {
                     .buttonStyle(.borderedProminent)
             }
         }
-        .onChange(of: recorder.phase) { _, phase in
+        .onChange(of: recorder.phase, initial: true) { _, phase in
             if case .finished(saved: true) = phase { model.recordingEnded(context: context) }
         }
     }

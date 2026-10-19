@@ -6,6 +6,7 @@ import Observation
 final class RecorderRunner {
     enum Phase: Equatable {
         case idle
+        case starting
         case running
         case finished(saved: Bool)
         case failed(String)
@@ -32,12 +33,13 @@ final class RecorderRunner {
     private var currentTrialType: String?
     private var pending = ""
 
-    var isRunning: Bool { phase == .running }
+    var isRunning: Bool { phase == .starting || phase == .running }
     var imageryRound: Int { min(imageryDone / 2 + 1, Self.imageryTarget / 2) }
 
-    func start(settings: AppSettings, participant: Participant) {
+    func start(settings: AppSettings, participant: Participant, headband: MuseConnection) {
         guard !isRunning else { return }
         reset()
+        phase = .starting
 
         let fm = FileManager.default
         guard fm.isExecutableFile(atPath: settings.pythonPath) else {
@@ -80,13 +82,17 @@ final class RecorderRunner {
             Task { @MainActor in self?.finish(status: status) }
         }
 
-        do {
-            try process.run()
-            self.process = process
-            startedAt = .now
-            phase = .running
-        } catch {
-            phase = .failed("Could not start the recorder: \(error.localizedDescription)")
+        Task {
+            // Keep navigation locked while the single Bluetooth connection is released.
+            await headband.stopAndWait()
+            do {
+                try process.run()
+                self.process = process
+                startedAt = .now
+                phase = .running
+            } catch {
+                phase = .failed("Could not start the recorder: \(error.localizedDescription)")
+            }
         }
     }
 

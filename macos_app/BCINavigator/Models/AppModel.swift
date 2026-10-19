@@ -70,6 +70,7 @@ final class AppModel {
     }
 
     func signOut() {
+        guard !recorder.isRunning else { return }
         headband.stop()
         participant = nil
         session = nil
@@ -133,13 +134,9 @@ final class AppModel {
     }
 
     func startRecording() {
-        guard let participant else { return }
+        guard let participant, !recorder.isRunning else { return }
         screen = .recording
-        Task {
-            // The Muse 2 accepts one Bluetooth connection, so release ours before PsychoPy connects.
-            await headband.stopAndWait()
-            recorder.start(settings: settings, participant: participant)
-        }
+        recorder.start(settings: settings, participant: participant, headband: headband)
     }
 
     func recordingEnded(context: ModelContext) {

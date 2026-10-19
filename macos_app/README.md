@@ -16,3 +16,16 @@ open "build/Build/Products/Debug/BCI Navigator.app"
 ```
 
 Behavior and design decisions are in `SPEC.md`.
+
+## Recorder lifecycle regression check
+
+From the repo root, with Xcode selected:
+
+```bash
+xcrun swiftc -swift-version 6 -default-isolation MainActor \
+  macos_app/BCINavigator/Models/*.swift macos_app/BCINavigator/Services/*.swift \
+  macos_app/tests/RecorderLifecycleTests.swift -o /tmp/BCIRecorderLifecycleTests
+/tmp/BCIRecorderLifecycleTests
+```
+
+This uses an in-memory participant database and a temporary Python recorder to check startup locking, duplicate launch prevention, output parsing, and session saving without a headband.
