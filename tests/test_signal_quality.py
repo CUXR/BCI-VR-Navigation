@@ -32,6 +32,15 @@ class QualityTests(unittest.TestCase):
             self.assertEqual(info["status"], "good")
             self.assertAlmostEqual(info["rms_uv"], 20 / np.sqrt(2))
 
+    def test_frontal_sensors_use_their_own_rms_limits(self):
+        # 300 uV RMS is past the ear limit (100/200) but under the forehead limit (400/800).
+        result = self.score(clean()[0] * 15)
+        for ch in ("TP9", "TP10"):
+            self.assertNotEqual(result["channels"][ch]["status"], "good")
+            self.assertIn("high_amplitude", result["channels"][ch]["reasons"])
+        for ch in ("AF7", "AF8"):
+            self.assertEqual(result["channels"][ch]["status"], "good")
+
     def test_saturation_identifies_each_channel_without_cleaning_raw(self):
         for idx, ch in enumerate(CHANNELS):
             with self.subTest(channel=ch):
@@ -121,10 +130,10 @@ class QualityTests(unittest.TestCase):
         entered, release = threading.Event(), threading.Event()
         original = monitor._channel
 
-        def slow(values):
+        def slow(values, name=None):
             entered.set()
             release.wait(2)
-            return original(values)
+            return original(values, name)
 
         with patch.object(monitor, "_channel", side_effect=slow):
             worker = threading.Thread(target=lambda: monitor.evaluate(now=0))

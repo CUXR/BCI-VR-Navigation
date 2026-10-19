@@ -48,7 +48,7 @@ Checks use the latest two seconds of **raw** EEG, refreshed every 0.5 seconds:
 |---|---|---|
 | ADC saturation | More than 1% of samples have absolute amplitude ≥999 µV | Immediately poor |
 | Flat line | Standard deviation <0.5 µV | Immediately poor |
-| Large amplitude | Mean-centered RMS >100 µV / >200 µV | Fair / poor when persistent |
+| Large amplitude | Mean-centered RMS >100 µV / >200 µV on TP9 and TP10, >400 µV / >800 µV on AF7 and AF8 | Fair / poor when persistent |
 | Line noise | 50/60 Hz ±2 Hz power divided by 1–90 Hz power >25% / >50% | Fair / poor when persistent |
 | Invalid values | NaN or infinity | Unknown for the affected channel |
 | Decoder range | Absolute raw amplitude >1001 µV | Unknown; reject before squaring |

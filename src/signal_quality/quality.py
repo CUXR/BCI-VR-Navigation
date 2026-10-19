@@ -13,6 +13,8 @@ import numpy as np
 from scipy.signal import welch
 
 CHANNELS = ("TP9", "AF7", "AF8", "TP10")
+# The forehead sensors sit on dry skin and read higher at rest than the ear sensors, so they get their own RMS limits.
+FRONTAL = ("AF7", "AF8")
 log = logging.getLogger(__name__)
 
 
@@ -29,6 +31,8 @@ class QualityConfig:
     flat_std_uv: float = 0.5
     rms_warn_uv: float = 100.0
     rms_bad_uv: float = 200.0
+    frontal_rms_warn_uv: float = 400.0
+    frontal_rms_bad_uv: float = 800.0
     line_warn_fraction: float = 0.25
     line_bad_fraction: float = 0.50
     loss_warn_fraction: float = 0.01
@@ -39,7 +43,8 @@ class QualityConfig:
             raise ValueError("Use 50/60 Hz mains and a sampling rate above the mains band")
         if min(self.window_s, self.update_s, self.stale_s, self.recovery_s) <= 0:
             raise ValueError("Window, update, stale and recovery durations must be positive")
-        if not (0 < self.flat_std_uv < self.rms_warn_uv < self.rms_bad_uv < self.rail_uv):
+        if not (0 < self.flat_std_uv < self.rms_warn_uv < self.rms_bad_uv < self.rail_uv
+                and self.flat_std_uv < self.frontal_rms_warn_uv < self.frontal_rms_bad_uv < self.rail_uv):
             raise ValueError("Amplitude thresholds must be ordered and positive")
         if not (0 <= self.line_warn_fraction < self.line_bad_fraction <= 1
                 and 0 <= self.loss_warn_fraction < self.loss_bad_fraction <= 1
@@ -164,8 +169,10 @@ class QualityMonitor:
             status = "ok"
         return status, reasons, loss, method
 
-    def _channel(self, values):
+    def _channel(self, values, name=None):
         c = self.config
+        warn, bad = ((c.frontal_rms_warn_uv, c.frontal_rms_bad_uv) if name in FRONTAL
+                     else (c.rms_warn_uv, c.rms_bad_uv))
         if not np.isfinite(values).all():
             return "unknown", ["invalid_values"], True, {"invalid_fraction": float(np.mean(~np.isfinite(values)))}
         # Reject impossible decoder output before squaring (including finite 1e300).
@@ -183,11 +190,11 @@ class QualityMonitor:
         if std < c.flat_std_uv:
             return "poor", ["flat_line"], True, metrics
         reasons = []
-        if std > c.rms_warn_uv:
+        if std > warn:
             reasons.append("high_amplitude")
         if line > c.line_warn_fraction:
             reasons.append("line_noise")
-        status = "poor" if std > c.rms_bad_uv or line > c.line_bad_fraction else "fair" if reasons else "good"
+        status = "poor" if std > bad or line > c.line_bad_fraction else "fair" if reasons else "good"
         return status, reasons, False, metrics
 
     def evaluate(self, *, now=None, wall_time=None):
@@ -224,7 +231,7 @@ class QualityMonitor:
             metrics = {}
             candidate, why = "unknown", reasons[:]
             if status != "unknown":
-                candidate, why, immediate, metrics = self._channel(eeg[i])
+                candidate, why, immediate, metrics = self._channel(eeg[i], ch)
                 if generation != self._scored_generation:
                     self._history[ch].append(candidate)
                     if immediate:
