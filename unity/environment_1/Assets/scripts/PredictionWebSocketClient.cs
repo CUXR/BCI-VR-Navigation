@@ -161,6 +161,11 @@ public class PredictionWebSocketClient : MonoBehaviour
             return;
         }
 
+        if (envelope != null && envelope.type == "signal_quality")
+        {
+            return;
+        }
+
         PredictionMessage prediction = JsonUtility.FromJson<PredictionMessage>(json);
         if (prediction == null)
         {

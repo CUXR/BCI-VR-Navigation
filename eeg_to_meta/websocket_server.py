@@ -178,6 +178,17 @@ class JsonWSServer:
             else:
                 self._last_navigation_sent_at = previous_sent_at
 
+    async def broadcast_quality(self, report: dict):
+        """Send advisory quality independently of prediction thresholds/cooldowns."""
+        message = json.dumps(report, allow_nan=False)
+        stale = set()
+        for ws in tuple(self._clients):
+            try:
+                await asyncio.wait_for(ws.send(message), timeout=0.2)
+            except (websockets.ConnectionClosed, asyncio.TimeoutError):
+                stale.add(ws)
+        self._clients -= stale
+
     async def broadcast_state(self, state: str, *, participant: str | None = None, message: str | None = None):
         """Broadcast pipeline state events to all connected clients."""
         if not self._clients:

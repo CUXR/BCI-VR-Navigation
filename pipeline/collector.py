@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import json
 import logging
 import signal
 import threading
@@ -46,6 +47,9 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
+from src.signal_quality import CsvRecorder, QualityConfig, QualityMonitor
+from src.signal_quality.quality import format_quality
 
 from . import labels as L
 from .marker_server import (
@@ -221,7 +225,7 @@ class MockBoard:
             for ch in self.EEG_INDICES:
                 arr[ch] = self._rng.normal(0.0, 25.0, size=n)
             arr[self.TIMESTAMP_INDEX] = (
-                now + np.arange(n) * period
+                self._stream_t0 + (sample_idx + np.arange(n)) * period
             )
             with self._lock:
                 if self._pending_markers:
@@ -236,7 +240,7 @@ class MockBoard:
                         arr[self.MARKER_INDEX, offset] = code
                 self._buffer.append(arr)
             sample_idx += n
-            next_t = now + n * period
+            next_t = self._stream_t0 + sample_idx * period
 
 
 # ── Collector ──────────────────────────────────────────────────────
@@ -281,13 +285,16 @@ class Collector:
         self._stop = asyncio.Event()
         self._eeg_thread: Optional[threading.Thread] = None
         self._eeg_thread_stop = threading.Event()
-        self._sample_buffer: list[dict] = []
-        self._sample_lock = threading.Lock()
+        self._recorder = None
+        self.quality = None
+        self._reader_error = None
+        self._loop = None
         self._trials: list[TrialRow] = []
         self._sampling_rate: int = SFREQ
         self._eeg_indices: list[int] = list(range(N_EEG_CHANNELS))
         self._marker_index: Optional[int] = None
         self._timestamp_index: Optional[int] = None
+        self._packet_index: Optional[int] = None
         self._session_t0: Optional[float] = None
         self._session_t1: Optional[float] = None
         self._runs_completed = 0
@@ -299,47 +306,36 @@ class Collector:
         self.session_dir.mkdir(parents=True, exist_ok=True)
         log.info("Session directory: %s", self.session_dir)
 
+        drain_task = None
         try:
             self._open_board()
-        except Exception as exc:                                    # noqa: BLE001
-            log.error("Failed to open board: %s", exc)
-            return 2
-
-        self._start_eeg_thread()
-
-        self._marker_server = MarkerServer(
-            host=self.marker_bind,
-            port=self.marker_port,
-            on_marker=self._safe_insert_marker,
-        )
-        await self._marker_server.start()
-
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(sig, self._request_stop)
-            except (NotImplementedError, RuntimeError):
-                # Windows / restricted environments — fall back to KeyboardInterrupt.
-                pass
-
-        log.info(
-            "Collector ready. Marker WS ws://%s:%d. Waiting for Unity to start "
-            "%d run(s) (Ctrl-C or session_end to stop).",
-            self.marker_bind, self.marker_port, self.runs,
-        )
-
-        drain_task = asyncio.create_task(self._drain_events())
-        try:
+            self._loop = asyncio.get_running_loop()
+            self._start_eeg_thread()
+            self._marker_server = MarkerServer(
+                host=self.marker_bind, port=self.marker_port,
+                on_marker=self._safe_insert_marker)
+            await self._marker_server.start()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                try:
+                    self._loop.add_signal_handler(sig, self._request_stop)
+                except (NotImplementedError, RuntimeError):
+                    pass
+            log.info("Collector ready. Marker WS ws://%s:%d; waiting for %d run(s).",
+                     self.marker_bind, self.marker_port, self.runs)
+            drain_task = asyncio.create_task(self._drain_events())
             await self._stop.wait()
+        except Exception as exc:
+            self._reader_error = str(exc)
+            log.exception("Collection failed; saving incomplete session")
         finally:
-            drain_task.cancel()
-            try:
-                await drain_task
-            except asyncio.CancelledError:
-                pass
+            if drain_task is not None:
+                drain_task.cancel()
+                try:
+                    await drain_task
+                except asyncio.CancelledError:
+                    pass
             await self._shutdown()
-
-        return 0
+        return 3 if self._reader_error or (self._recorder and self._recorder.error) else 0
 
     # ── lifecycle helpers ──────────────────────────────────────────
 
@@ -369,9 +365,10 @@ class Collector:
         BoardShim.enable_board_logger()
         params = BrainFlowInputParams()
         if self.serial:
-            params.serial_number = self.serial
+            params.serial_number = self.serial if self.serial.startswith("Muse-") else "Muse-" + self.serial
         board_id = BoardIds.MUSE_2_BOARD.value
         board = BoardShim(board_id, params)
+        self._board = board
         board.prepare_session()
         board.start_stream()
         self._board = board
@@ -379,6 +376,7 @@ class Collector:
         self._eeg_indices = BoardShim.get_eeg_channels(board_id)
         self._marker_index = BoardShim.get_marker_channel(board_id)
         self._timestamp_index = BoardShim.get_timestamp_channel(board_id)
+        self._packet_index = BoardShim.get_package_num_channel(board_id)
         self._board_id_str = "MUSE_2_BOARD"
         log.info(
             "Muse 2 connected (%s); %d Hz, %d EEG channels.",
@@ -397,26 +395,37 @@ class Collector:
 
     def _start_eeg_thread(self) -> None:
         self._session_t0 = time.time()
+        self._recorder = CsvRecorder(self.eeg_csv_path,
+                                     ["timestamp", "marker_code", "marker_label"] + CH_NAMES)
+        self._recorder.start()
+        self.quality = QualityMonitor(QualityConfig(sfreq=self._sampling_rate),
+                                      output=self.session_dir / "signal_quality.jsonl",
+                                      source="mock" if self.mock else "muse", muse_packets=not self.mock)
+        self.quality.start()
         self._eeg_thread_stop.clear()
         self._eeg_thread = threading.Thread(target=self._eeg_loop, daemon=True)
         self._eeg_thread.start()
 
     def _eeg_loop(self) -> None:
+        last_report = 0.0
         while not self._eeg_thread_stop.is_set():
             try:
-                if self._board is None:
-                    time.sleep(EEG_POLL_INTERVAL_S)
-                    continue
                 data = self._board.get_board_data()
-                if data is None or data.shape[1] == 0:
-                    time.sleep(EEG_POLL_INTERVAL_S)
-                    continue
-                self._ingest_eeg_chunk(data)
-            except Exception:                                       # noqa: BLE001
-                log.exception("EEG loop error; continuing")
-                time.sleep(EEG_POLL_INTERVAL_S)
-            else:
-                time.sleep(EEG_POLL_INTERVAL_S)
+                if data is not None and data.shape[1]:
+                    self._ingest_eeg_chunk(data)
+                backlog = self._board.get_board_data_count() if not self.mock else None
+                self.quality.set_health(board_backlog_samples=backlog)
+            except Exception as exc:
+                self._reader_error = str(exc)
+                self.quality.set_health(reader_error=str(exc))
+                log.exception("EEG reader failed; stopping incomplete session")
+                if self._loop is not None:
+                    self._loop.call_soon_threadsafe(self._request_stop)
+                return
+            if time.monotonic() - last_report >= 0.5:
+                log.info("%s", format_quality(self.quality.latest))
+                last_report = time.monotonic()
+            self._eeg_thread_stop.wait(0.02)
 
     def _ingest_eeg_chunk(self, data: np.ndarray) -> None:
         n = data.shape[1]
@@ -430,34 +439,47 @@ class Collector:
             if self._marker_index is not None and self._marker_index < data.shape[0]
             else None
         )
-        eeg_rows = [data[idx] for idx in self._eeg_indices if idx < data.shape[0]]
-        # Pad missing channels with NaN so the CSV stays rectangular.
+        eeg_rows = [data[idx] if idx < data.shape[0] else np.full(n, np.nan)
+                    for idx in self._eeg_indices[:N_EEG_CHANNELS]]
         while len(eeg_rows) < N_EEG_CHANNELS:
             eeg_rows.append(np.full(n, np.nan))
+        if ts_row is None:
+            ts_row = np.full(n, np.nan)
+        self.quality.feed(np.asarray(eeg_rows), ts_row,
+                          data[self._packet_index] if self._packet_index is not None else None)
 
         now_fallback = time.time()
-        with self._sample_lock:
-            for i in range(n):
-                ts = (
-                    float(ts_row[i])
-                    if ts_row is not None and ts_row[i] > 0
-                    else now_fallback
-                )
-                marker_val = (
-                    float(marker_row[i])
-                    if marker_row is not None
-                    else 0.0
-                )
-                row = {"timestamp": ts}
-                for ch_idx, ch_name in enumerate(CH_NAMES):
-                    row[ch_name] = float(eeg_rows[ch_idx][i])
-                row["marker_code"] = int(round(marker_val)) if abs(marker_val) > 1e-9 else None
-                row["marker_label"] = (
-                    L.MARKER_CODE_TO_TRIAL_TYPE.get(row["marker_code"])
-                    if row["marker_code"] is not None
-                    else None
-                )
-                self._sample_buffer.append(row)
+        rows = []
+        for i in range(n):
+            ts = (
+                float(ts_row[i])
+                if ts_row is not None and ts_row[i] > 0
+                else now_fallback
+            )
+            marker_val = (
+                float(marker_row[i])
+                if marker_row is not None
+                else 0.0
+            )
+            row = {"timestamp": ts}
+            for ch_idx, ch_name in enumerate(CH_NAMES):
+                row[ch_name] = float(eeg_rows[ch_idx][i])
+            row["marker_code"] = int(round(marker_val)) if abs(marker_val) > 1e-9 else None
+            row["marker_label"] = (
+                L.MARKER_CODE_TO_TRIAL_TYPE.get(row["marker_code"])
+                if row["marker_code"] is not None
+                else None
+            )
+            rows.append(row)
+        try:
+            self._recorder.submit(rows)
+        except RuntimeError:
+            if self._loop is not None:
+                self._loop.call_soon_threadsafe(self._request_stop)
+            log.error("%s", self._recorder.error)
+        self.quality.set_health(recording_error=self._recorder.error,
+                                recording_backlog_batches=self._recorder.backlog,
+                                rejected_recording_samples=self._recorder.rejected_samples)
 
     # ── event drain ─────────────────────────────────────────────────
 
@@ -512,47 +534,35 @@ class Collector:
         if self._eeg_thread is not None:
             self._eeg_thread.join(timeout=3.0)
 
+        if self._eeg_thread is not None and self._eeg_thread.is_alive():
+            raise RuntimeError("EEG reader did not stop; cannot release board concurrently")
         if self._board is not None:
             try:
                 self._board.stop_stream()
-            except Exception:                                       # noqa: BLE001
-                log.exception("Error stopping stream")
-            try:
+                if self._recorder is not None and self.quality is not None:
+                    tail = self._board.get_board_data()
+                    if tail is not None and tail.shape[1] > 0:
+                        self._ingest_eeg_chunk(tail)
+            except Exception as exc:
+                self._reader_error = self._reader_error or str(exc)
+                log.exception("Failed to drain final EEG samples")
+            finally:
                 self._board.release_session()
-            except Exception:                                       # noqa: BLE001
-                log.exception("Error releasing session")
-
-        # Drain any tail of EEG samples produced after the loop exit.
-        if self._board is not None:
+        if self._recorder is not None:
             try:
-                tail = self._board.get_board_data()
-                if tail is not None and tail.shape[1] > 0:
-                    self._ingest_eeg_chunk(tail)
-            except Exception:                                       # noqa: BLE001
-                pass
-
-        self._write_eeg_csv()
+                self._recorder.close()
+            except RuntimeError:
+                log.exception("Session recording is incomplete")
+        if self.quality is not None:
+            self.quality.set_health(reader_error=self._reader_error,
+                                    recording_error=self._recorder.error if self._recorder else None,
+                                    recording_backlog_batches=self._recorder.backlog if self._recorder else 0,
+                                    rejected_recording_samples=self._recorder.rejected_samples if self._recorder else 0)
+            self.quality.stop()
         self._write_trial_log_csv()
         self._write_metadata_yaml()
-        log.info(
-            "Wrote %d EEG samples and %d trial events to %s",
-            len(self._sample_buffer), len(self._trials), self.session_dir,
-        )
-
-    def _write_eeg_csv(self) -> None:
-        with self._sample_lock:
-            samples = list(self._sample_buffer)
-        fieldnames = ["timestamp", "marker_code", "marker_label"] + list(CH_NAMES)
-        with self.eeg_csv_path.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for s in samples:
-                writer.writerow({
-                    "timestamp": f"{s['timestamp']:.6f}",
-                    "marker_code": s.get("marker_code") if s.get("marker_code") is not None else "",
-                    "marker_label": s.get("marker_label") or "",
-                    **{ch: f"{s[ch]:.6f}" for ch in CH_NAMES},
-                })
+        log.info("Wrote %d EEG samples and %d trial events to %s",
+                 self._recorder.written_samples if self._recorder else 0, len(self._trials), self.session_dir)
 
     def _write_trial_log_csv(self) -> None:
         with self.trial_log_path.open("w", newline="") as f:
@@ -569,7 +579,7 @@ class Collector:
                 return "true" if v else "false"
             if isinstance(v, (int, float)):
                 return str(v)
-            return f"\"{str(v)}\""
+            return json.dumps(str(v))
 
         meta = {
             "session_id": self.session_id,
@@ -591,6 +601,12 @@ class Collector:
             "runs_completed": self._runs_completed,
             "n_trial_events": len(self._trials),
             "mock": self.mock,
+            "signal_quality_file": "signal_quality.jsonl",
+            "recording_complete": not bool(self._reader_error or (self._recorder and self._recorder.error)),
+            "recording_error": self._recorder.error if self._recorder else None,
+            "reader_error": self._reader_error,
+            "written_samples": self._recorder.written_samples if self._recorder else 0,
+            "rejected_recording_samples": self._recorder.rejected_samples if self._recorder else 0,
             "notes": self.notes,
         }
         with self.metadata_path.open("w") as f:
