@@ -54,13 +54,13 @@ def filter_2_hp_order2_fdesign(srate: float = 256.0) -> tuple[np.ndarray, np.nda
 
 
 def filter_36_lp_order6(srate: float = 256.0) -> tuple[np.ndarray, np.ndarray]:
-    """6th-order Butterworth lowpass filter at 36 Hz."""
+    """Sixth-order Butterworth lowpass filter."""
     b, a = butter(6, 36.0 / (srate / 2.0), btype="low")
     return np.asarray(b, dtype=np.float64), np.asarray(a, dtype=np.float64)
 
 
 def filter_30_lp_order6(srate: float = 256.0) -> tuple[np.ndarray, np.ndarray]:
-    """6th-order Butterworth lowpass filter at 30 Hz."""
+    """Sixth-order Butterworth lowpass filter."""
     b, a = butter(6, 30.0 / (srate / 2.0), btype="low")
     return np.asarray(b, dtype=np.float64), np.asarray(a, dtype=np.float64)
 
@@ -720,6 +720,7 @@ class SignalQualityEngine:
         self.drl_buffer.reset()
         self.drl_samples = 0
         self.drl_step_counter = 1.0
+        self.all_good_30_latched = 0.0
 
     def process_drl(self, drl_ref: np.ndarray) -> bool | None:
         """Feed [DRL, REF] samples (shape (2, n) or (n, 2) or (2,))."""
@@ -1214,6 +1215,7 @@ class QualityMonitor:
         with self._lock:
             report = deepcopy(self._report)
             arrival, reported_at = self._arrival, self._reported_at
+            drl_arrival = self._drl_arrival
         # A blocked sidecar must not leave a permanently green live indicator.
         if report is not None and self._thread is not None:
             now = time.monotonic()
@@ -1227,6 +1229,20 @@ class QualityMonitor:
                 report["last_sample_age_s"] = now - arrival if arrival is not None else None
                 for channel in report["channels"].values():
                     channel["status"], channel["reasons"] = "unknown", [reason]
+                    channel["sqc_status"] = channel["sqc_eeg_status"] = channel["electrode_status"] = "unknown"
+                if "sqc" in report:
+                    report["sqc"]["status"] = "unknown"
+                    report["sqc"]["good_data"] = None
+            if drl_arrival is not None and now - drl_arrival > self.config.stale_s:
+                report["is_drl_connected"] = None
+                report["reference_status"] = "stale"
+                report["reference_sample_age_s"] = now - drl_arrival
+                if "sqc" in report:
+                    report["sqc"].update(reference_status="stale", good_data=None)
+                    if not reason:
+                        report["sqc"]["status"] = "eeg_only"
+                for channel in report["channels"].values():
+                    channel["sqc_status"] = "unknown"
         return report
 
     def _stream_health(self, ts, packets):
