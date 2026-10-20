@@ -1239,7 +1239,7 @@ class QualityMonitor:
                 report["reference_sample_age_s"] = now - drl_arrival
                 if "sqc" in report:
                     report["sqc"].update(reference_status="stale", good_data=None)
-                    if not reason:
+                    if report["stream_status"] != "unknown":
                         report["sqc"]["status"] = "eeg_only"
                 for channel in report["channels"].values():
                     channel["sqc_status"] = "unknown"
@@ -1455,6 +1455,9 @@ class QualityMonitor:
                 "channels": {},
                 "quality_output_error": self.output_error,
             }
+            if status == "unknown":
+                report["sqc"]["status"] = "unknown"
+                report["sqc"]["good_data"] = None
 
             for i, ch in enumerate(CHANNELS):
                 metrics = {}
