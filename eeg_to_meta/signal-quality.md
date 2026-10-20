@@ -8,8 +8,25 @@ codes. It estimates signal usability; it does not measure contact impedance.
 The shared FpZ reference can affect several channels, so a noisy channel does
 not conclusively identify a faulty physical contact.
 
-See [the implementation and validation report](signal-quality-validation.md) for
-model requirements, DRL availability, and validation limits.
+## What “Reference” means
+
+EEG measures voltage differences between each sensing electrode and a shared
+reference. Muse 2 places its reference at FpZ, at the center of the forehead;
+its specification labels this CMS/DRL. DRL (driven right leg) is the name of
+an electrical common-mode feedback technique, not a sensor on your leg.
+The monitor's `Reference` field describes the result of its DRL/REF diagnostic
+check, separate from the four EEG channel statuses.
+
+`Reference: unavailable` means this reader has supplied no DRL/REF diagnostic
+samples. It does **not** mean the reference is disconnected or that EEG cannot
+be recorded. The synthetic board and four-channel CSV replay also lack these
+samples, so this output is expected in both examples below. When actual
+DRL/REF samples are supplied, the monitor distinguishes `warming_up`,
+`connected`, `disconnected`, `invalid`, and `stale`.
+
+A channel can therefore report `good` based on EEG while its reference-dependent
+`sqc_status` remains `unknown`. Neither result proves physical contact quality;
+a shared-reference problem can affect several EEG channels.
 
 ## Check headset fit
 
@@ -40,6 +57,31 @@ legacy marker-only rows, and processes the CSV in batches. `--sfreq` sets the
 replay sampling rate (default: 256 Hz). Live checking reads the sampling rate
 from BrainFlow, including the synthetic board's different rate.
 
+## Reading the command output
+
+The live terminal line separates stream health, reference diagnostics, and
+EEG channel usability. Initial `no_data` and `warming_up` reports are expected
+until the two-second reporting window fills. `--simulate` uses generated EEG;
+its `good` results check the software path, not a real headset fit.
+
+Replay prints a summary; `--output` writes the individual reports, including
+`stream_reasons`, channel `reasons`, and measurements. Counts are reporting
+windows, not samples or independent trials. Windows overlap, and the final
+partial batch also produces a report.
+
+Replaying `sub03/eeg_data_20260308_144200.csv` on 2026-10-20 reproduced
+52,728 samples and 412 reports:
+
+- Each channel had 82 `unknown` reports: three for `warming_up` and 79 for
+  timestamp-based `sample_loss`. These are not all startup reports.
+- TP9 had 330 `poor` reports, all with `saturation` (the raw clipping safeguard).
+- AF7 and AF8 each had 330 `good` reports.
+- TP10 had 296 `good`, 12 `fair` (`high_amplitude`), and 22 `poor` reports
+  (14 `saturation`, eight `high_amplitude`).
+
+These reasons describe the saved signal. They do not establish that TP9's
+physical electrode was loose, or measure the detector's accuracy.
+
 ## Signal quality check algorithm
 
 `src/signal_quality/quality.py` evaluates signal usability through a multi-stage
@@ -54,7 +96,9 @@ filtering, feature extraction, and hysteresis pipeline:
      followed by a 2nd-order Butterworth highpass at 2 Hz (`filter_2_hp_order2_fdesign`),
      plus a parallel 2–30 Hz cascade (`filter_30_lp_order6`) and a 45–65 Hz
      notch path for classifier time-domain features. Lowpass/notch coefficients
-     use SciPy Butterworth designs; external coefficient equivalence is unverified.
+     use SciPy Butterworth designs; the highpass uses fixed coefficients at
+     220/256 Hz. Filter state starts at zero, and external coefficient
+     equivalence is unverified.
 2. **Feature extraction (`calc_var_feats`)**:
    - Over the latest `0.5 s` (`128` samples at 256 Hz) of the 2–36 Hz signal,
      computes per-channel population standard deviation `std_p` (`ddof=0`),
@@ -89,7 +133,8 @@ filtering, feature extraction, and hysteresis pipeline:
      Ears use their minimum only when both codes are below `4`. Independent
      held statuses and raw tree codes remain in the report.
    - Each epoch computes a one-second raw PSD and seven notch-filtered
-     time-domain features per electrode. The default quietness gate requires
+     time-domain features per electrode. PSD uses a symmetric Hamming window,
+     skips invalid samples, and retains the latest spectrum. The default quietness gate requires
      variance `< 275`, horseshoe `< 2`, and a measured connected reference.
    - `use_epoch_classifier=True` selects the learned gate when an explicit
      `EpochClassifier` is supplied. It combines the last three remapped
@@ -183,6 +228,18 @@ intervals, then validate before enabling an automatic recording/inference gate.
 Automatic baseline adaptation would risk accepting a poorly fitted headset as
 normal.
 
+## Implementation limits
+
+No trained classifier parameters or probability-remapping function are bundled.
+Classifier tests use synthetic fixtures and do not establish trained-model
+accuracy. The default uses the quietness gate. The implementation has not
+established clinical accuracy or equivalence to an external system.
+
+Motion scaling and automatic blink detection are not calibrated. Batched input
+does not guarantee sample-level ordering between separate streams. DRL/REF
+thresholds require compatible raw input units; EEG, AUX, PPG, and acceleration
+cannot substitute for that diagnostic pair.
+
 ## Validation
 
 ```bash
@@ -195,6 +252,13 @@ classifier response to 60 Hz interference, brief blinks, persistence and recover
 loss, timestamp errors, bounded buffers, slow consumers, disk failure, and
 recording shutdown. Integration tests exercise the mock collector and the
 PsychoPy backend with BrainFlow's synthetic board, without opening a GUI.
+
+The previous validation report recorded 48 quality/integration tests and seven
+realtime tests passing on 2026-10-20, plus a macOS app build, recorder lifecycle
+regression, and a four-second synthetic CLI run. See
+[`macos_app/README.md`](../macos_app/README.md) for build and lifecycle commands.
+The single-file replay results above were rerun during the documentation
+consolidation. The later removal of DRL/REF support has been reverted.
 
 Local replay on 2026-10-18 processed 16 recordings, 1,043,868 EEG rows, and
 8,163 analysis updates. This checks replay compatibility and fault handling;
@@ -209,4 +273,4 @@ recording to inspect backlog, sample continuity, and bounded memory.
 
 References: [BrainFlow Muse decoder](https://github.com/brainflow-dev/brainflow/blob/5.23.0/src/board_controller/muse/muse.cpp),
 [BrainFlow buffer API](https://brainflow.readthedocs.io/en/stable/UserAPI.html),
-[Muse electrode documentation](https://musehealth.ai/pages/faq).
+[Muse 2 technical specifications](https://m.media-amazon.com/images/I/61ntS2R%2BKmL.pdf).

@@ -76,7 +76,7 @@ uv run python -m src.signal_quality --simulate --seconds 10
 
 The backend reports signal quality separately from transport/recording errors.
 The current recorder and Unity inference pipeline include live monitoring.
-See [signal-quality setup, thresholds, and validation](docs/signal-quality.md).
+See [signal-quality setup, thresholds, and validation](eeg_to_meta/signal-quality.md).
 
 ## Run the Unity Navigation System
 
