@@ -67,7 +67,8 @@ class SignalQualityEngineUnitTests(unittest.TestCase):
         np.testing.assert_allclose(b_hp_256, [0.96588528974407, -1.93177057948814, 0.96588528974407])
         np.testing.assert_allclose(a_hp_256, [1.0, -1.930606427219668, 0.932934731756612])
         b_hp_220, a_hp_220 = filter_2_hp_order2_fdesign(220.0)
-        np.testing.assert_allclose(b_hp_220, [0.960388005421737, -1.920776010843474, 0.960388005421737])
+        np.testing.assert_allclose(b_hp_220, [0.960414643790783, -1.920829287581566, 0.960414643790783])
+        np.testing.assert_allclose(a_hp_220, [1.0, -1.919261672801331, 0.922396902361801])
         b_lp36, a_lp36 = filter_36_lp_order6(256.0)
         self.assertEqual(len(b_lp36), 7)
         self.assertEqual(len(a_lp36), 7)
@@ -151,7 +152,8 @@ class SignalQualityEngineUnitTests(unittest.TestCase):
 
 class QualityTests(unittest.TestCase):
     def score(self, data, *, monitor=None, now=0, timestamps=None, packets=None, drl_ref=None):
-        monitor = monitor or QualityMonitor()
+        # These legacy cases assert independent electrode behavior; coupling has its own tests.
+        monitor = monitor or QualityMonitor(QualityConfig(couple_channels=False))
         monitor.feed(
             data,
             clean(data.shape[1])[1] if timestamps is None else timestamps,
@@ -231,7 +233,7 @@ class QualityTests(unittest.TestCase):
     def test_persistence_transitions_fair_then_poor(self):
         # Hysteresis state 4.0 caps initial bad epochs to fair (2.0) until
         # prop_bad_15 > 0.7 (11 of 15 epochs), then transitions to poor (4.0).
-        monitor = QualityMonitor(QualityConfig(window_s=1.0))
+        monitor = QualityMonitor(QualityConfig(window_s=1.0, couple_channels=False))
         t = np.arange(256) / 256.0
         bad_chunk = np.tile(20.0 * np.sin(2 * np.pi * 10 * t), (4, 1))
         bad_chunk[2] = 250.0 * np.sin(2 * np.pi * 10 * t)  # std_p ~ 176 uV >= 118.9837
