@@ -105,6 +105,8 @@ def sensor_payload(report, conveyor, now):
         rms = item.get("rms_uv")
         sensors[name] = {
             "quality": statuses[name],
+            "sqc_quality": item.get("sqc_status", "unknown"),
+            "electrode_quality": item.get("electrode_status", "unknown"),
             "reasons": item.get("reasons", []),
             "rms_uv": None if rms is None else round(rms, 1),
             "ready_progress": round(progress[name], 2),
@@ -182,6 +184,8 @@ def main():
                 lost = False
                 emit("status", state="connected", serial=args.serial)
             emit("quality", stream_status=report["stream_status"], stream_reasons=report["stream_reasons"],
+                 reference_status=report.get("reference_status", "unavailable"),
+                 sqc=report.get("sqc", {}),
                  sensors=sensor_payload(report, conveyor, time.monotonic()))
 
         error = monitor.latest and monitor.latest["health"].get("reader_error")

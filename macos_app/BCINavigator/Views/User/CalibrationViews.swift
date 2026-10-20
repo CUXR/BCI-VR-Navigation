@@ -157,6 +157,9 @@ struct CalibrationView: View {
                     }
                     .padding(.bottom, -16)
                     ScreenHeader(title: title(headband, code: code), message: message(headband))
+                    if let notice = headband.referenceNotice {
+                        Text(notice).font(.system(size: 14)).foregroundStyle(.secondary)
+                    }
                     HStack(spacing: 32) {
                         HeadDiagram(qualities: { headband.quality($0) }, size: 270)
                         VStack(alignment: .leading, spacing: 14) {

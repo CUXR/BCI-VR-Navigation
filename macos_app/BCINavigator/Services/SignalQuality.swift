@@ -142,6 +142,12 @@ final class MuseConnection {
     private(set) var reasons: [Sensor: [String]] = [:]
     /// 0 to 1: progress through the three-second EEG readiness check.
     private(set) var readyProgress: [Sensor: Double] = [:]
+    private(set) var referenceStatus = "unavailable"
+
+    var referenceNotice: String? {
+        guard connection.isLive, referenceStatus != "connected", referenceStatus != "disconnected" else { return nil }
+        return "Reference contact is unverified. Readiness below checks the four EEG signals only."
+    }
     private(set) var sampleRate: Double?
     private(set) var logTail: [String] = []
 
@@ -168,10 +174,9 @@ final class MuseConnection {
 
     var readyCount: Int { Sensor.allCases.filter(isReady).count }
 
-    /// Every channel poor at once points at the shared reference strip in the middle of the
-    /// forehead, not at one electrode: without it all four inputs float and pick up mains hum.
+    /// Only measured DRL/REF evidence identifies a disconnected reference contact.
     var referenceProblem: Bool {
-        connection.isLive && Sensor.allCases.allSatisfy { quality($0) == .poor }
+        connection.isLive && referenceStatus == "disconnected"
     }
 
     static let referenceFixTitle = "Fix the middle of the band"
@@ -195,6 +200,7 @@ final class MuseConnection {
         stop()
         self.serial = serial
         qualities = [:]
+        referenceStatus = "unavailable"
         noise = [:]
         sampleRate = nil
         logTail = []
@@ -317,6 +323,7 @@ final class MuseConnection {
             }
         case "quality":
             guard let sensors = object["sensors"] as? [String: [String: Any]] else { return }
+            referenceStatus = object["reference_status"] as? String ?? "unavailable"
             var newQualities: [Sensor: SensorQuality] = [:]
             var newNoise: [Sensor: Double] = [:]
             var newReasons: [Sensor: [String]] = [:]
