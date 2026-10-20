@@ -23,6 +23,10 @@ class CollectorQualityTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(2.6)
                 report = collector.quality.latest
                 self.assertEqual(report["stream_status"], "ok")
+                self.assertIsNone(report["is_drl_connected"])
+                self.assertEqual(report["reference_status"], "unavailable")
+                self.assertEqual(report["sqc"]["classifier_status"], "disabled")
+                self.assertTrue(report["sqc"]["coupled"])
                 self.assertTrue(all(c["status"] == "good" for c in report["channels"].values()))
                 self.assertGreater(collector.eeg_csv_path.stat().st_size, 1000)
                 self.assertTrue(collector._eeg_thread.is_alive())
@@ -68,6 +72,7 @@ class PsychoPyQualityTests(unittest.TestCase):
                 reader = recorder.recording_thread
                 time.sleep(2.6)
                 self.assertEqual(recorder.signal_quality["stream_status"], "ok")
+                self.assertEqual(recorder.signal_quality["reference_status"], "unavailable")
                 self.assertTrue(reader.is_alive())
                 self.assertTrue(recorder.start_recording())
                 self.assertIs(recorder.recording_thread, reader)

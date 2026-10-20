@@ -459,7 +459,7 @@ def is_noise_alert(
 # ── Reference & DRL Contact Check ──────────────────────────────────────────
 
 
-def drlref_classification(drl_window: np.ndarray, muse_model: int = 3) -> bool:
+def drlref_classification(drl_window: np.ndarray, muse_model: int = 3) -> bool | None:
     """Classify DRL/REF reference contact quality over a 2-second window.
 
     Args:
@@ -468,11 +468,11 @@ def drlref_classification(drl_window: np.ndarray, muse_model: int = 3) -> bool:
     """
     arr = np.asarray(drl_window, dtype=np.float64)
     if arr.ndim != 2 or arr.size == 0:
-        return True
+        return None
     if arr.shape[0] == 2 and arr.shape[1] != 2:
         arr = arr.T
-    if arr.shape[1] < 2:
-        return True
+    if arr.shape[1] != 2 or not np.isfinite(arr).all():
+        return None
     abs_diff = np.abs(arr[:, 0] - arr[:, 1])
     if muse_model in (0, 1):
         diff_thresh = 45162.0
@@ -624,6 +624,7 @@ class SignalQualityEngine:
         self.eeg2_30_buffer = CircBuffer2D(self.buff_length, 4, 0.0)
         self.eeg_notch_buffer = CircBuffer2D(self.buff_length, 4, 0.0)
         self.drl_buffer = CircBuffer2D(self.drl_buff_length, 2, 0.0)
+        self.drl_samples = 0
 
         # DFIIT IIR filter state vectors z: shape (4, order)
         self._z_lp36 = np.zeros((4, len(self._b_lp36) - 1), dtype=np.float64)
@@ -675,9 +676,9 @@ class SignalQualityEngine:
 
         # Noise gate state
         self.sub_win_var_hist = CircBuffer2D(3, 4, 0.0)
-        self.quiet_hist_15 = CircBuffer2D(15, 4, 1.0)
-        self.quiet_hist_30 = CircBuffer2D(30, 4, 1.0)
-        self.ear_quiet_hist_75 = CircBuffer1D(75, 1.0)
+        self.quiet_hist_15 = CircBuffer2D(15, 4, 0.0)
+        self.quiet_hist_30 = CircBuffer2D(15, 4, 0.0)
+        self.ear_quiet_hist_75 = CircBuffer1D(75, 0.0)
         self.last_ear_quiet_flag = True
         self.noise_score = 0.0
         self.is_nan_alert = False
@@ -685,7 +686,8 @@ class SignalQualityEngine:
         self.noise_fraction_100 = 0.0
 
         # Reference DRL & auxiliary inputs
-        self.is_drl_connect = True
+        self.is_drl_connect = None
+        self.reference_status = "unavailable"
         self.drl_ever_fed = False
         self.acc = np.zeros(3, dtype=np.float64)
         self.blink_hist_15 = CircBuffer1D(15, 0.0)
@@ -711,7 +713,15 @@ class SignalQualityEngine:
         self._b_notch, self._a_notch = filter_45_65_notch_order6(self.srate) if self.srate > 130 else (None, None)
         self.reset()
 
-    def process_drl(self, drl_ref: np.ndarray) -> bool:
+    def invalidate_drl(self, reason: str = "stale") -> None:
+        """An unmeasured reference is distinct from a measured disconnection."""
+        self.is_drl_connect = None
+        self.reference_status = reason
+        self.drl_buffer.reset()
+        self.drl_samples = 0
+        self.drl_step_counter = 1.0
+
+    def process_drl(self, drl_ref: np.ndarray) -> bool | None:
         """Feed [DRL, REF] samples (shape (2, n) or (n, 2) or (2,))."""
         arr = np.asarray(drl_ref, dtype=np.float64)
         if arr.ndim == 1:
@@ -726,18 +736,28 @@ class SignalQualityEngine:
         else:
             raise ValueError("Expected 1D or 2D DRL/REF array")
 
+        if not arr.shape[1]:
+            return self.is_drl_connect
         self.drl_ever_fed = True
+        if not np.isfinite(arr).all():
+            self.invalidate_drl("invalid")
+            return None
+        if self.reference_status in ("unavailable", "stale", "invalid"):
+            self.reference_status = "warming_up"
         n = arr.shape[1]
         idx = 0
         while idx < n:
             step = min(n - idx, max(1, int(self.drl_step_counter)))
             self.drl_buffer.update_chunk(arr[:, idx : idx + step])
+            self.drl_samples += step
             self.drl_step_counter -= float(step)
             idx += step
             if self.drl_step_counter <= 0.0:
                 self.drl_step_counter = float(self.drl_step_samples)
-                win = self.drl_buffer.latest(self.drl_win_length)
-                self.is_drl_connect = drlref_classification(win, self.muse_model)
+                if self.drl_samples >= self.drl_win_length:
+                    win = self.drl_buffer.latest(self.drl_win_length)
+                    self.is_drl_connect = drlref_classification(win, self.muse_model)
+                    self.reference_status = "connected" if self.is_drl_connect else "disconnected"
         return self.is_drl_connect
 
     def process_eeg(
@@ -807,8 +827,8 @@ class SignalQualityEngine:
         # 1. NaN alert over the 3-second buffer
         self.is_nan_alert = is_nan_alert(self.nan_buffer.data, self.config.nan_alert_fraction)
 
-        # 2. Variance/kurtosis features on latest 0.5 s (128 samples at 256 Hz) of 2-36 Hz (or 2-30 Hz for model 2)
-        var_source = self.eeg2_30_buffer if self.muse_model == 2 else self.eeg2_36_buffer
+        # Model 2 uses the notch buffer; other models use 2-36 Hz.
+        var_source = self.eeg_notch_buffer if self.muse_model == 2 else self.eeg2_36_buffer
         var_win = var_source.latest(self.var_win_length)
         self.std_uv, self.log10_var, self.kurtosis = calc_var_feats(var_win)
         raw_win = self.eeg_buffer.latest(self.win_length)
@@ -922,10 +942,13 @@ class SignalQualityEngine:
             xz_norm = float(np.sqrt(self.acc[0] ** 2 + self.acc[2] ** 2))
             h[3] = 4.0 if xz_norm <= 114441275946.491 else 2.0
 
-        if not self.is_drl_connect:
+        if self.is_drl_connect is False:
             h[:] = 4.0
 
-        if not self.last_ear_quiet_flag:
+        if self.is_drl_connect is None:
+            # EEG-only extension: unavailable reference data must not fabricate a bad contact.
+            self.no_good_ear_counter = 0.0
+        elif not self.last_ear_quiet_flag:
             self.no_good_ear_counter += 1.0
         else:
             self.no_good_ear_counter = 0.0
@@ -977,7 +1000,7 @@ class SignalQualityEngine:
         last_30 = self.coupled_hist_60.latest(30)
         if np.all(last_30 == 1.0) and self.all_good_30_latched == 0.0:
             self.all_good_30_latched = 1.0
-        if not self.is_drl_connect:
+        if self.is_drl_connect is False:
             self.all_good_30_latched = 0.0
 
         # Good epoch indicator (> 2 channels coupled == 1.0) pushed to 300-epoch buffer
@@ -1020,7 +1043,7 @@ class SignalQualityEngine:
 
         self.sub_win_var_hist.update_row(sub_win_var)
 
-        drl_val = 1.0 if self.is_drl_connect else 0.0
+        drl_val = 1.0 if self.is_drl_connect is True else 0.0
         horseshoe_good = self.h_coupled < 2.0
         quiet_good = is_quiet * horseshoe_good * drl_val
         self.classifier_status = "disabled"
@@ -1081,6 +1104,8 @@ class QualityMonitor:
         self._packets = np.empty(0, dtype=np.float64)
         self._pending_eeg = np.empty((4, 0), dtype=np.float64)
         self._pending_drl = np.empty((2, 0), dtype=np.float64)
+        self._drl_arrival = None
+        self._reset_drl = False
         self._reset_sqc = False
         self._arrival = None
         self._generation = 0
@@ -1144,14 +1169,18 @@ class QualityMonitor:
                 (self._pending_eeg, eeg[:, -self._sqc_capacity :]), axis=1
             )[:, -self._sqc_capacity :]
             if drl_arr is not None and drl_arr.shape[1]:
+                if self._drl_arrival is not None and arrival - self._drl_arrival > self.config.stale_s:
+                    self._pending_drl = self._pending_drl[:, :0]
+                    self._reset_drl = True
                 drl_cap = self._sqc.drl_buff_length
                 self._pending_drl = np.concatenate(
                     (self._pending_drl, drl_arr[:, -drl_cap:]), axis=1
                 )[:, -drl_cap:]
+                self._drl_arrival = arrival
             self._arrival = arrival
             self._generation += 1
 
-    def feed_drl(self, drl_ref):
+    def feed_drl(self, drl_ref, *, now=None):
         """Feed Muse DRL/REF reference samples (shape (2, m) or (m, 2)) into the monitor."""
         arr = np.asarray(drl_ref, dtype=np.float64)
         if arr.ndim == 1 and arr.size == 2:
@@ -1163,8 +1192,13 @@ class QualityMonitor:
         if not arr.shape[1]:
             return
         with self._lock:
+            arrival = time.monotonic() if now is None else now
+            if self._drl_arrival is not None and arrival - self._drl_arrival > self.config.stale_s:
+                self._pending_drl = self._pending_drl[:, :0]
+                self._reset_drl = True
             drl_cap = self._sqc.drl_buff_length
             self._pending_drl = np.concatenate((self._pending_drl, arr[:, -drl_cap:]), axis=1)[:, -drl_cap:]
+            self._drl_arrival = arrival
             self._generation += 1
 
     def set_health(self, **values):
@@ -1234,7 +1268,7 @@ class QualityMonitor:
             return []
 
         reasons = []
-        if not self._sqc.is_drl_connect:
+        if self._sqc.is_drl_connect is False:
             reasons.append("drl_disconnected")
         if self._sqc.is_nan_alert:
             reasons.append("nan_alert")
@@ -1307,7 +1341,8 @@ class QualityMonitor:
             "sensor_state": int(self._sqc.sensor_state[idx]),
             "quality_score": float(self._sqc.continuous_score[idx]),
             "electrode_status": HORSESHOE_TO_STATUS.get(float(self._sqc.h_sensor[idx]), "unknown"),
-            "sqc_status": status,
+            "sqc_eeg_status": status,
+            "sqc_status": status if self._sqc.is_drl_connect is not None else "unknown",
         }
         # Research safeguards are applied after (and never fed back into) SQC.
         extensions = []
@@ -1315,6 +1350,8 @@ class QualityMonitor:
             extensions.append("saturation")
         if float(np.std(values)) < c.flat_std_uv:
             extensions.append("flat_line")
+        if self._sqc.is_drl_connect is False:
+            extensions.append("drl_disconnected")
         metrics["safeguard_reasons"] = extensions
         if extensions:
             status, reasons = "poor", extensions
@@ -1328,10 +1365,12 @@ class QualityMonitor:
                 eeg, ts, packets = self._eeg.copy(), self._timestamps.copy(), self._packets.copy()
                 pending_eeg = self._pending_eeg.copy()
                 pending_drl = self._pending_drl.copy()
+                drl_arrival, reset_drl = self._drl_arrival, self._reset_drl
                 reset_sqc = self._reset_sqc
                 self._pending_eeg = self._pending_eeg[:, :0]
                 self._pending_drl = self._pending_drl[:, :0]
                 self._reset_sqc = False
+                self._reset_drl = False
                 arrival, generation, health = self._arrival, self._generation, self._health.copy()
 
             if reset_sqc:
@@ -1339,7 +1378,11 @@ class QualityMonitor:
                 for ch in CHANNELS:
                     self._last_reasons[ch] = []
 
-            if pending_drl.shape[1]:
+            if reset_drl:
+                self._sqc.invalidate_drl("stale")
+            if drl_arrival is not None and now - drl_arrival > c.stale_s:
+                self._sqc.invalidate_drl("stale")
+            elif pending_drl.shape[1]:
                 self._sqc.process_drl(pending_drl)
             if pending_eeg.shape[1]:
                 self._sqc.process_eeg(pending_eeg)
@@ -1378,7 +1421,19 @@ class QualityMonitor:
                 "samples_in_window": len(ts),
                 "is_nan_alert": bool(self._sqc.is_nan_alert),
                 "is_noise_alert": bool(self._sqc.is_noise_alert),
-                "is_drl_connected": bool(self._sqc.is_drl_connect),
+                "is_drl_connected": self._sqc.is_drl_connect,
+                "reference_status": self._sqc.reference_status,
+                "reference_sample_age_s": max(0.0, now - drl_arrival) if drl_arrival is not None else None,
+                "sqc": {
+                    "status": "eeg_only" if self._sqc.is_drl_connect is None else (
+                        "classifier_unavailable" if self._sqc.classifier_status == "unavailable" else "available"),
+                    "reference_status": self._sqc.reference_status,
+                    "classifier_status": self._sqc.classifier_status,
+                    "classifier_provenance": self._sqc.epoch_classifier.provenance if self._sqc.epoch_classifier else None,
+                    "epoch_probabilities": self._sqc.epoch_probabilities.tolist() if self._sqc.epoch_probabilities is not None else None,
+                    "good_data": self._sqc.good_data.tolist() if self._sqc.is_drl_connect is not None else None,
+                    "coupled": c.couple_channels,
+                },
                 "noise_score": float(self._sqc.noise_score),
                 "health": health,
                 "channels": {},
@@ -1392,6 +1447,10 @@ class QualityMonitor:
                     candidate, why, _, metrics = self._channel(eeg[i], ch)
                 else:
                     self._last_reasons[ch] = []
+                metrics.setdefault("sqc_status", "unknown")
+                metrics.setdefault("sqc_eeg_status", "unknown")
+                metrics.setdefault("electrode_status", "unknown")
+                metrics.setdefault("safeguard_reasons", why[:] if candidate == "unknown" else [])
                 report["channels"][ch] = {"status": candidate, "reasons": why, **metrics}
 
             self._scored_generation = generation
@@ -1459,4 +1518,5 @@ def format_quality(report):
         for ch, item in report["channels"].items()
     )
     reasons = f" ({', '.join(report['stream_reasons'])})" if report["stream_reasons"] else ""
-    return f"Stream: {report['stream_status']}{reasons} | {channels}"
+    reference = report.get("reference_status", "unavailable")
+    return f"Stream: {report['stream_status']}{reasons} | Reference: {reference} | {channels}"
