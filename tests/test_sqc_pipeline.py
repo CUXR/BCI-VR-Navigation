@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 from scipy.special import expit
@@ -234,6 +235,25 @@ class ReferenceInputTests(unittest.TestCase):
         self.assertEqual(filled["AF7"]["sqc_quality"], "unknown")
         report["channels"]["AF7"]["status"] = "poor"
         self.assertEqual(sensor_payload(report, conveyor, 14)["AF7"]["ready_progress"], 0)
+
+    def test_live_snapshot_expires_reference_between_worker_updates(self):
+        monitor = QualityMonitor()
+        monitor.feed(eeg(512), 1000 + np.arange(512) / 256,
+                     drl_ref=np.zeros((2, 64)), now=0)
+        monitor.evaluate(now=0)
+        monitor.feed(eeg(128), 1002 + np.arange(128) / 256, now=0.6)
+        monitor._thread = object()  # Exercise live snapshot freshness without a worker race.
+        monitor._reported_at = 0.5
+        with patch("src.signal_quality.quality.time.monotonic", return_value=0.6):
+            report = monitor.latest
+        self.assertEqual(report["stream_status"], "ok")
+        self.assertIsNone(report["is_drl_connected"])
+        self.assertEqual(report["sqc"]["status"], "eeg_only")
+        self.assertTrue(all(c["sqc_status"] == "unknown" for c in report["channels"].values()))
+        with patch("src.signal_quality.quality.time.monotonic", return_value=2):
+            report = monitor.latest
+        self.assertEqual(report["sqc"]["status"], "unknown")
+        self.assertTrue(all(c["sqc_eeg_status"] == "unknown" for c in report["channels"].values()))
 
 
 class StreamingSQCIntegrationTests(unittest.TestCase):

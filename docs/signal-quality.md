@@ -1,11 +1,15 @@
 # Muse 2 signal quality
 
 The backend in `src/signal_quality/` evaluates raw TP9 (left ear), AF7 (left
-forehead), AF8 (right forehead), and TP10 (right ear) samples independently.
+forehead), AF8 (right forehead), and TP10 (right ear) samples, retaining independent
+electrode diagnostics and reporting coupled SQC statuses by default.
 It reports `good`, `fair`, `poor`, or `unknown`, with measurements and reason
 codes. It estimates signal usability; it does not measure contact impedance.
 The shared FpZ reference can affect several channels, so a noisy channel does
 not conclusively identify a faulty physical contact.
+
+See [the implementation and validation report](signal-quality-validation.md) for
+model requirements, DRL availability, and validation limits.
 
 ## Check headset fit
 
@@ -18,8 +22,9 @@ uv run python -m src.signal_quality --serial 15C3 --output /tmp/muse-quality.jso
 Wear the Muse, close competing Muse applications, and make the headset available
 over Bluetooth. The command connects through BrainFlow's native Muse 2 driver;
 it needs no classifier, PsychoPy window, or Quest. Stop with Ctrl-C. Omit
-`--serial` to let BrainFlow discover a headband. Use `--mains 50` in a 50 Hz
-environment (default: 60 Hz).
+`--serial` to let BrainFlow discover a headband. The retained `--mains` setting
+is metadata only; the feature notch covers 45–65 Hz regardless
+of that setting. There is no default raw-spectrum line-noise status override.
 
 Without hardware:
 
@@ -47,7 +52,9 @@ filtering, feature extraction, and hysteresis pipeline:
    - Filters each channel with a stateful Direct Form II Transposed (`filter_data_dfiit`)
      cascade: 6th-order Butterworth lowpass at 36 Hz (`filter_36_lp_order6`)
      followed by a 2nd-order Butterworth highpass at 2 Hz (`filter_2_hp_order2_fdesign`),
-     plus a parallel 2–30 Hz cascade (`filter_30_lp_order6`).
+     plus a parallel 2–30 Hz cascade (`filter_30_lp_order6`) and a 45–65 Hz
+     notch path for classifier time-domain features. Lowpass/notch coefficients
+     use SciPy Butterworth designs; external coefficient equivalence is unverified.
 2. **Feature extraction (`calc_var_feats`)**:
    - Over the latest `0.5 s` (`128` samples at 256 Hz) of the 2–36 Hz signal,
      computes per-channel population standard deviation `std_p` (`ddof=0`),
@@ -77,6 +84,28 @@ filtering, feature extraction, and hysteresis pipeline:
      `is_nan_alert` (`>= 6%` NaNs in 3 s buffer), `is_noise_alert` (`>= 50%` noisy
      epochs in last 100 epochs), and `drlref_classification` (`|DRL - REF| <= 200000`
      and `var(|DRL - REF|) <= 87035000` over 2 s at 32 Hz for Muse 2).
+5. **Coupling and noise classification**:
+   - Forehead outputs use the better (minimum horseshoe code) of AF7/AF8.
+     Ears use their minimum only when both codes are below `4`. Independent
+     held statuses and raw tree codes remain in the report.
+   - Each epoch computes a one-second raw PSD and seven notch-filtered
+     time-domain features per electrode. The default quietness gate requires
+     variance `< 275`, horseshoe `< 2`, and a measured connected reference.
+   - `use_epoch_classifier=True` selects the learned gate when an explicit
+     `EpochClassifier` is supplied. It combines the last three remapped
+     probabilities by product for Muse 2 and requires horseshoe `< 2` and DRL
+     connected. Missing weights/remapping produce `classifier_status:
+     "unavailable"`; no replacement weights ship with this repository.
+
+BrainFlow 5.19's Muse 2 presets do not expose a DRL/REF pair. Default reports
+therefore contain `reference_status: "unavailable"`, `is_drl_connected: null`,
+and per-channel `sqc_status: "unknown"`. EEG-only research statuses remain
+available. The macOS readiness bar still requires three seconds of reported
+good EEG, and the screen explicitly says that reference contact is unverified.
+Adapters that actually receive DRL/REF can feed the original raw-scale pair via
+`QualityMonitor.feed_drl()` or `feed(..., drl_ref=...)`; stale/invalid pairs
+invalidate the reference result. EEG, AUX, PPG, and acceleration are not used
+as substitutes for the missing reference pair.
 
 Loss estimation uses Muse's 16-bit packet counter when provided, allowing
 12 samples per packet and normal counter wraparound. Otherwise it uses
@@ -132,7 +161,14 @@ Example report fields (additional thresholds and health fields are also sent):
 }
 ```
 
-Acquisition only copies a bounded two-second quality window. Spectral analysis
+Channel `sqc_eeg_status` is the selected horseshoe output before research
+safeguards; `sqc_status` also requires a measured reference. `electrode_status`
+is the independent held output. `status` applies raw clipping, flatline,
+decoder-range, and transport safeguards; `safeguard_reasons` identifies those
+extensions. These checks never change the decision-tree history.
+
+Acquisition copies a two-second raw reporting window and at most three seconds
+of pending engine input. Spectral analysis
 and quality-sidecar writes run on a separate worker. The CSV writer uses a
 64-batch queue; acquisition does not wait for disk. Queue exhaustion or a disk
 error is explicit and marks recording incomplete. Already queued rows are
@@ -140,7 +176,7 @@ drained when possible. A disk failure can leave a partial final batch, so the
 written-row count is a count of successfully flushed batches. This does not
 guarantee lossless recording under arbitrary stalls or a process crash.
 
-Quality is advisory in this version: it does not remove channels, modify model
+Quality remains advisory to recording/inference: it does not remove channels, modify model
 input, automatically tune thresholds, or block trials/predictions. Tune
 `QualityConfig` from a confirmed clean baseline and labeled poor-contact
 intervals, then validate before enabling an automatic recording/inference gate.
@@ -155,7 +191,7 @@ uv run python -m unittest discover -s eeg_to_meta -p 'test_*.py' -v
 ```
 
 Tests cover individual-channel clipping, flat lines, invalid/huge values,
-50/60 Hz interference, brief blinks, persistence and recovery, packet wrap and
+classifier response to 60 Hz interference, brief blinks, persistence and recovery, packet wrap and
 loss, timestamp errors, bounded buffers, slow consumers, disk failure, and
 recording shutdown. Integration tests exercise the mock collector and the
 PsychoPy backend with BrainFlow's synthetic board, without opening a GUI.
