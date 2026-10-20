@@ -21,9 +21,11 @@ import logging
 from pathlib import Path
 import threading
 import time
+from typing import Callable
 
 import numpy as np
 from scipy.signal import butter, lfilter
+from scipy.special import expit
 
 CHANNELS = ("TP9", "AF7", "AF8", "TP10")
 EAR = ("TP9", "TP10")
@@ -40,8 +42,8 @@ log = logging.getLogger(__name__)
 def filter_2_hp_order2_fdesign(srate: float = 256.0) -> tuple[np.ndarray, np.ndarray]:
     """2nd-order Butterworth highpass filter at 2 Hz."""
     if srate == 220.0:
-        b = np.array([0.960388005421737, -1.920776010843474, 0.960388005421737], dtype=np.float64)
-        a = np.array([1.0, -1.919205941625069, 0.922346080061879], dtype=np.float64)
+        b = np.array([0.960414643790783, -1.920829287581566, 0.960414643790783], dtype=np.float64)
+        a = np.array([1.0, -1.919261672801331, 0.922396902361801], dtype=np.float64)
         return b, a
     if srate == 256.0:
         b = np.array([0.96588528974407, -1.93177057948814, 0.96588528974407], dtype=np.float64)
@@ -65,7 +67,8 @@ def filter_30_lp_order6(srate: float = 256.0) -> tuple[np.ndarray, np.ndarray]:
 
 def filter_45_65_notch_order6(srate: float = 220.0) -> tuple[np.ndarray, np.ndarray]:
     """Bandstop 45-65 Hz Butterworth filter."""
-    b, a = butter(3, [45.0 / (srate / 2.0), 65.0 / (srate / 2.0)], btype="bandstop")
+    # A sixth-order bandstop prototype produces 13 coefficients.
+    b, a = butter(6, [45.0 / (srate / 2.0), 65.0 / (srate / 2.0)], btype="bandstop")
     return np.asarray(b, dtype=np.float64), np.asarray(a, dtype=np.float64)
 
 
@@ -263,7 +266,7 @@ def do_psd(
     centered = x - float(np.mean(x))
     win = _hamming_symmetric(n)
     windowed = centered * win
-    fft_vals = np.fft.rfft(windowed, n=nfft) / float(n)
+    fft_vals = np.fft.rfft(windowed, n=nfft) / float(srate)
     psd = np.abs(fft_vals) ** 2
     if normalize:
         if norm_bins_1based is None:
@@ -409,11 +412,10 @@ def is_epoch_good(
     intercept_4: np.ndarray,
     feat_mean_544: np.ndarray,
     threshold: float = 0.5,
-    remap_center: np.ndarray | None = None,
-    remap_slope: np.ndarray | None = None,
+    remap: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Logistic regression + sigmoid remapping epoch quality classifier."""
-    psd_flat = np.asarray(psd_129x4, dtype=np.float64).T.reshape(129, 4)
+    psd_flat = np.asarray(psd_129x4, dtype=np.float64).reshape(129, 4)
     psd_log = psd_flat.copy()
     pos = psd_log > 0.0
     psd_log[pos] = np.log10(psd_log[pos])
@@ -423,9 +425,11 @@ def is_epoch_good(
     mean_mat = np.asarray(feat_mean_544, dtype=np.float64).reshape(136, 4)
     coeff_mat = np.asarray(feat_coeff_544, dtype=np.float64).reshape(136, 4)
     z = np.sum(coeff_mat * ((design - mean_mat) / std_mat), axis=0) + np.asarray(intercept_4, dtype=np.float64)
-    probs = 1.0 / (1.0 + np.exp(-z))
-    if remap_center is not None and remap_slope is not None:
-        probs = 1.0 / (1.0 + np.exp(-np.asarray(remap_slope) * (probs - np.asarray(remap_center))))
+    probs = expit(z)
+    if remap is not None:
+        probs = np.asarray(remap(probs), dtype=np.float64)
+        if probs.shape != (4,) or not np.isfinite(probs).all() or ((probs < 0) | (probs > 1)).any():
+            raise ValueError("Epoch remapping must return four finite probabilities in [0, 1]")
     flags = probs > threshold
     return probs, flags
 
@@ -488,6 +492,39 @@ def drlref_classification(drl_window: np.ndarray, muse_model: int = 3) -> bool:
 
 
 @dataclass(frozen=True)
+class EpochClassifier:
+    """Explicitly supplied model parameters and probability remapping.
+
+    Arrays use feature-major, channel-interleaved layout.
+    The streaming pipeline requires an explicit remapping callback.
+    """
+
+    std: np.ndarray
+    coeff: np.ndarray
+    intercept: np.ndarray
+    mean: np.ndarray
+    remap: Callable[[np.ndarray], np.ndarray]
+    provenance: str
+    threshold: float = 0.5
+
+    def __post_init__(self):
+        for name, size in (("std", 544), ("coeff", 544), ("intercept", 4), ("mean", 544)):
+            value = np.asarray(getattr(self, name), dtype=np.float64).reshape(-1).copy()
+            if value.size != size or not np.isfinite(value).all():
+                raise ValueError(f"{name} must contain {size} finite values")
+            if name == "std" and (value <= 0).any():
+                raise ValueError("Classifier standard deviations must be positive")
+            value.setflags(write=False)
+            object.__setattr__(self, name, value)
+        if not callable(self.remap) or not self.provenance or not 0 < self.threshold < 1:
+            raise ValueError("Supply model provenance, remapping, and a threshold in (0, 1)")
+
+    def predict(self, psd, features):
+        return is_epoch_good(psd, features, self.std, self.coeff, self.intercept,
+                             self.mean, threshold=self.threshold, remap=self.remap)
+
+
+@dataclass(frozen=True)
 class QualityConfig:
     """Configuration for the Muse signal quality check algorithm and stream transport checks."""
 
@@ -514,7 +551,8 @@ class QualityConfig:
     noise_alert_fraction: float = 0.50
     hold_epochs: int = 3
     good_streak_epochs: int = 4
-    couple_channels: bool = False
+    couple_channels: bool = True
+    use_epoch_classifier: bool = False
     # Transport / raw sanity limits
     rail_uv: float = 999.0
     decoder_max_uv: float = 1001.0
@@ -549,8 +587,9 @@ class SignalQualityEngine:
     `process_idle()` every `step_samples = round(srate / 20.0) * 2` samples (26 at 256 Hz).
     """
 
-    def __init__(self, config: QualityConfig | None = None):
+    def __init__(self, config: QualityConfig | None = None, *, epoch_classifier: EpochClassifier | None = None):
         self.config = config or QualityConfig()
+        self.epoch_classifier = epoch_classifier
         self.muse_model = int(self.config.muse_model)
         self.srate = float(self.config.sfreq)
         self.win_length = max(6, int(np.rint(self.srate * 1.0)))
@@ -568,6 +607,7 @@ class SignalQualityEngine:
         self._b_lp36, self._a_lp36 = filter_36_lp_order6(self.srate)
         self._b_lp30, self._a_lp30 = filter_30_lp_order6(self.srate)
         self._b_hp2, self._a_hp2 = filter_2_hp_order2_fdesign(self.srate)
+        self._b_notch, self._a_notch = filter_45_65_notch_order6(self.srate) if self.srate > 130 else (None, None)
 
         self.reset()
 
@@ -582,6 +622,7 @@ class SignalQualityEngine:
         self.nan_buffer = CircBuffer2D(self.buff_length, 4, 0.0)
         self.eeg2_36_buffer = CircBuffer2D(self.buff_length, 4, 0.0)
         self.eeg2_30_buffer = CircBuffer2D(self.buff_length, 4, 0.0)
+        self.eeg_notch_buffer = CircBuffer2D(self.buff_length, 4, 0.0)
         self.drl_buffer = CircBuffer2D(self.drl_buff_length, 2, 0.0)
 
         # DFIIT IIR filter state vectors z: shape (4, order)
@@ -589,6 +630,7 @@ class SignalQualityEngine:
         self._z_hp2_36 = np.zeros((4, len(self._b_hp2) - 1), dtype=np.float64)
         self._z_lp30 = np.zeros((4, len(self._b_lp30) - 1), dtype=np.float64)
         self._z_hp2_30 = np.zeros((4, len(self._b_hp2) - 1), dtype=np.float64)
+        self._z_notch = np.zeros((4, len(self._b_notch) - 1), dtype=np.float64) if self._b_notch is not None else None
 
         # Latest feature values
         self.std_uv = np.zeros(4, dtype=np.float64)
@@ -598,6 +640,10 @@ class SignalQualityEngine:
         self.full_win_var = np.zeros(4, dtype=np.float64)
         self.isgood_feats = np.zeros(28, dtype=np.float64)
         self.psd = np.zeros((129, 4), dtype=np.float64)
+        self.epoch_probabilities = None
+        self.classifier_status = "disabled" if not self.config.use_epoch_classifier else "unavailable"
+        self.epoch_probability_hist = CircBuffer2D(3, 4, 0.0)
+        self.good_data = np.zeros(4, dtype=np.float64)
 
         # Per-sensor decision history and hysteresis state
         self.raw_hist_15 = CircBuffer2D(15, 4, 0.0)
@@ -662,6 +708,7 @@ class SignalQualityEngine:
         self._b_lp36, self._a_lp36 = filter_36_lp_order6(self.srate)
         self._b_lp30, self._a_lp30 = filter_30_lp_order6(self.srate)
         self._b_hp2, self._a_hp2 = filter_2_hp_order2_fdesign(self.srate)
+        self._b_notch, self._a_notch = filter_45_65_notch_order6(self.srate) if self.srate > 130 else (None, None)
         self.reset()
 
     def process_drl(self, drl_ref: np.ndarray) -> bool:
@@ -741,6 +788,12 @@ class SignalQualityEngine:
             bp2_30, self._z_hp2_30 = filter_data_dfiit(self._z_hp2_30, lp30, self._b_hp2, self._a_hp2)
             self.eeg2_30_buffer.update_chunk(bp2_30)
 
+            if self._b_notch is not None:
+                notch, self._z_notch = filter_data_dfiit(self._z_notch, safe_chunk, self._b_notch, self._a_notch)
+            else:
+                notch = safe_chunk
+            self.eeg_notch_buffer.update_chunk(notch)
+
             self.win_step_counter -= float(step)
             idx += step
             if self.win_step_counter <= 0.0:
@@ -758,6 +811,11 @@ class SignalQualityEngine:
         var_source = self.eeg2_30_buffer if self.muse_model == 2 else self.eeg2_36_buffer
         var_win = var_source.latest(self.var_win_length)
         self.std_uv, self.log10_var, self.kurtosis = calc_var_feats(var_win)
+        raw_win = self.eeg_buffer.latest(self.win_length)
+        nan_win = self.nan_buffer.latest(self.win_length)
+        # Invalid decoder values are excluded from PSD and cannot poison FFT/IIR state.
+        psd_invalid = (nan_win > 0) | (np.abs(raw_win) > self.config.decoder_max_uv)
+        self.psd = calc_psd(raw_win, psd_invalid, srate=self.srate, nfft=self.nfft)
 
         # 3. Blink circular buffer update
         self.blink_hist_15.update(1.0 if self.last_blink_detected else 0.0)
@@ -772,6 +830,7 @@ class SignalQualityEngine:
         self._calc_horseshoe()
 
         # 6. Quietness gate and noise score
+        self.isgood_feats = calc_isgood_feats(self.eeg_notch_buffer.latest(self.win_length))
         self._calc_noise()
 
         # 7. Noise alert over the latest 100 epochs
@@ -794,12 +853,6 @@ class SignalQualityEngine:
             ],
             dtype=np.float64,
         )
-        # When DRL/REF is not streamed (e.g. BrainFlow 4-ch EEG or CSV replay), catch dead 0-uV flatlines on frontal channels
-        if not self.drl_ever_fed:
-            for ch_idx in (1, 2):
-                if self.std_uv[ch_idx] < c.flat_std_uv and self.log10_var[ch_idx] < c.ear_min_log10_var:
-                    tree_scores[ch_idx] = 0.0
-
         h = np.array([_tree_to_horseshoe(s) for s in tree_scores], dtype=np.float64)
         self.h_raw = h.copy()
 
@@ -968,7 +1021,22 @@ class SignalQualityEngine:
         self.sub_win_var_hist.update_row(sub_win_var)
 
         drl_val = 1.0 if self.is_drl_connect else 0.0
-        quiet_good = is_quiet * drl_val
+        horseshoe_good = self.h_coupled < 2.0
+        quiet_good = is_quiet * horseshoe_good * drl_val
+        self.classifier_status = "disabled"
+        self.epoch_probabilities = None
+        if self.config.use_epoch_classifier:
+            if self.epoch_classifier is None:
+                self.classifier_status = "unavailable"
+                quiet_good[:] = 0.0
+            else:
+                self.classifier_status = "active"
+                probs, _ = self.epoch_classifier.predict(self.psd, self.isgood_feats)
+                self.epoch_probability_hist.update_row(probs)
+                history = self.epoch_probability_hist.data
+                self.epoch_probabilities = np.mean(history, axis=0) if self.muse_model == 2 else np.prod(history, axis=0)
+                quiet_good = (self.epoch_probabilities > self.epoch_classifier.threshold) * horseshoe_good * drl_val
+        self.good_data = np.asarray(quiet_good, dtype=np.float64)
         self.quiet_hist_15.update_row(quiet_good)
         self.quiet_hist_30.update_row(quiet_good)
 
@@ -1000,7 +1068,8 @@ class QualityMonitor:
     Packet counters are Muse's 16-bit counter repeated for 12 EEG samples.
     """
 
-    def __init__(self, config: QualityConfig | None = None, *, output=None, source="muse", muse_packets=True):
+    def __init__(self, config: QualityConfig | None = None, *, output=None, source="muse", muse_packets=True,
+                 epoch_classifier: EpochClassifier | None = None):
         self.config = config or QualityConfig()
         self.source = source
         self.muse_packets = muse_packets
@@ -1016,7 +1085,7 @@ class QualityMonitor:
         self._arrival = None
         self._generation = 0
         self._scored_generation = -1
-        self._sqc = SignalQualityEngine(self.config)
+        self._sqc = SignalQualityEngine(self.config, epoch_classifier=epoch_classifier)
         self._last_reasons = {ch: [] for ch in CHANNELS}
         self._lock = threading.Lock()
         self._eval_lock = threading.Lock()
@@ -1237,7 +1306,18 @@ class QualityMonitor:
             "horseshoe_coupled": float(self._sqc.h_coupled[idx]),
             "sensor_state": int(self._sqc.sensor_state[idx]),
             "quality_score": float(self._sqc.continuous_score[idx]),
+            "electrode_status": HORSESHOE_TO_STATUS.get(float(self._sqc.h_sensor[idx]), "unknown"),
+            "sqc_status": status,
         }
+        # Research safeguards are applied after (and never fed back into) SQC.
+        extensions = []
+        if clipped > c.clip_fraction:
+            extensions.append("saturation")
+        if float(np.std(values)) < c.flat_std_uv:
+            extensions.append("flat_line")
+        metrics["safeguard_reasons"] = extensions
+        if extensions:
+            status, reasons = "poor", extensions
         return status, reasons, False, metrics
 
     def evaluate(self, *, now=None, wall_time=None):
