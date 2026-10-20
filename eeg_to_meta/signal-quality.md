@@ -146,7 +146,9 @@ BrainFlow 5.19's Muse 2 presets do not expose a DRL/REF pair. Default reports
 therefore contain `reference_status: "unavailable"`, `is_drl_connected: null`,
 and per-channel `sqc_status: "unknown"`. EEG-only research statuses remain
 available. The macOS readiness bar still requires three seconds of reported
-good EEG, and the screen explicitly says that reference contact is unverified.
+good EEG from each independent electrode, with raw-signal and transport safeguards
+applied. Coupling cannot make a poor electrode ready. The screen explicitly says
+that reference contact is unverified.
 Adapters that actually receive DRL/REF can feed the original raw-scale pair via
 `QualityMonitor.feed_drl()` or `feed(..., drl_ref=...)`; stale/invalid pairs
 invalidate the reference result. EEG, AUX, PPG, and acceleration are not used
@@ -160,6 +162,7 @@ packet metadata is global; it cannot establish per-electrode packet loss or
 prove that all four channel notifications were synchronized by the driver.
 
 Transport failure makes channel quality unknown rather than blaming contacts.
+It also makes aggregate `sqc.status` unknown and clears `sqc.good_data`.
 `reader_error`, `recording_error`, `board_backlog_samples`, recording backlog,
 and rejected recording rows are reported separately. A delayed quality worker
 also makes the live snapshot unknown, even while acquisition continues.

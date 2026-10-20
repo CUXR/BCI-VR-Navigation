@@ -97,7 +97,15 @@ def connect(serial, attempts, timeout):
 
 
 def sensor_payload(report, conveyor, now):
-    statuses = {name: report["channels"].get(name, {}).get("status", "unknown") for name in CHANNELS}
+    quality_rank = {"good": 0, "fair": 1, "poor": 2, "unknown": 3}
+    statuses = {}
+    for name in CHANNELS:
+        item = report["channels"].get(name, {})
+        # Coupling cannot make a poor electrode ready or bypass raw/transport safeguards.
+        statuses[name] = max(
+            item.get("status", "unknown"), item.get("electrode_status", "unknown"),
+            key=quality_rank.__getitem__,
+        )
     progress = conveyor.update(statuses, now)
     sensors = {}
     for name in CHANNELS:

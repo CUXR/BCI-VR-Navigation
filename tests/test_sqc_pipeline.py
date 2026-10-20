@@ -255,6 +255,78 @@ class ReferenceInputTests(unittest.TestCase):
         self.assertEqual(report["sqc"]["status"], "unknown")
         self.assertTrue(all(c["sqc_eeg_status"] == "unknown" for c in report["channels"].values()))
 
+    def test_poor_forehead_cannot_become_ready_through_coupling(self):
+        monitor = QualityMonitor()
+        conveyor = ReadyConveyor()
+        for index in range(40):
+            t = (np.arange(128) + index * 128) / 256
+            data = np.tile(20 * np.sin(2 * np.pi * 10 * t), (4, 1))
+            data[2] *= 12.5
+            monitor.feed(data, 1000 + t, now=index * 0.5)
+            report = monitor.evaluate(now=index * 0.5)
+            sensors = sensor_payload(report, conveyor, index * 0.5)
+        self.assertEqual(report["channels"]["AF8"]["sqc_eeg_status"], "good")
+        self.assertEqual(report["channels"]["AF8"]["electrode_status"], "poor")
+        self.assertEqual(sensors["AF8"]["quality"], "poor")
+        self.assertEqual(sensors["AF8"]["ready_progress"], 0)
+        self.assertEqual(sensors["AF7"]["ready_progress"], 1)
+
+    def test_ready_conveyor_preserves_raw_and_transport_safeguards(self):
+        for fault in ("saturation", "invalid_values", "invalid_timestamps"):
+            with self.subTest(fault=fault):
+                monitor = QualityMonitor()
+                conveyor = ReadyConveyor()
+                for index in range(10):
+                    report = self.feed(monitor, index)
+                    sensors = sensor_payload(report, conveyor, index * 0.5)
+                self.assertEqual(sensors["AF7"]["ready_progress"], 1)
+                data = eeg(512)
+                timestamps = 1005 + np.arange(512) / 256
+                if fault == "saturation":
+                    data[1] = np.clip(995 + data[1], -1000, 1000)
+                elif fault == "invalid_values":
+                    data[1, -1] = np.nan
+                else:
+                    timestamps[-1] = timestamps[-2]
+                monitor.feed(data, timestamps, now=5)
+                report = monitor.evaluate(now=5)
+                sensors = sensor_payload(report, conveyor, 5)
+                self.assertEqual(sensors["AF7"]["quality"], report["channels"]["AF7"]["status"])
+                self.assertIn(fault, sensors["AF7"]["reasons"])
+                self.assertEqual(sensors["AF7"]["ready_progress"], 0)
+
+    def test_unknown_transport_invalidates_aggregate_sqc(self):
+        for fault in ("invalid_timestamps", "sample_loss", "reader_error", "quality_worker_error"):
+            with self.subTest(fault=fault):
+                monitor = QualityMonitor()
+                for index in range(8):
+                    report = self.feed(monitor, index, np.zeros((2, 16)))
+                self.assertEqual(report["sqc"]["status"], "available")
+                self.assertEqual(report["sqc"]["good_data"], [1, 1, 1, 1])
+                timestamps = 1004 + np.arange(128) / 256
+                if fault == "invalid_timestamps":
+                    timestamps[-1] = timestamps[-2]
+                elif fault == "sample_loss":
+                    timestamps += 0.5
+                else:
+                    monitor.set_health(**{fault: "injected failure"})
+                monitor.feed(eeg(128), timestamps, drl_ref=np.zeros((2, 16)), now=4)
+                report = monitor.evaluate(now=4)
+                self.assertEqual(report["stream_status"], "unknown")
+                self.assertIn(fault, report["stream_reasons"])
+                self.assertEqual(report["reference_status"], "connected")
+                self.assertEqual(report["sqc"]["status"], "unknown")
+                self.assertIsNone(report["sqc"]["good_data"])
+                self.assertTrue(all(c["status"] == "unknown" for c in report["channels"].values()))
+                monitor.feed(eeg(128), 1005 + np.arange(128) / 256, now=4.5)
+                monitor._thread = object()
+                monitor._reported_at = 4.5
+                with patch("src.signal_quality.quality.time.monotonic", return_value=4.6):
+                    snapshot = monitor.latest
+                self.assertEqual(snapshot["reference_status"], "stale")
+                self.assertEqual(snapshot["sqc"]["status"], "unknown")
+                self.assertIsNone(snapshot["sqc"]["good_data"])
+
 
 class StreamingSQCIntegrationTests(unittest.TestCase):
     def test_worker_consumes_eeg_reference_and_classifier_and_flushes_sidecar(self):
