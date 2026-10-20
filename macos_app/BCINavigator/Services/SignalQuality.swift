@@ -93,9 +93,11 @@ enum QualityReason {
         switch code {
         case "saturation": "signal maxed out"
         case "flat_line": "no signal"
-        case "high_amplitude": "too noisy"
+        case "high_amplitude", "ear_noise_gate": "too noisy"
+        case "kurtosis_artifact", "motion_artifact": "movement or blink noise"
+        case "drl_disconnected", "all_sensors_bad": "reference not touching"
         case "line_noise": "electrical noise"
-        case "invalid_values", "out_of_range": "bad reading"
+        case "invalid_values", "out_of_range", "nan_alert": "bad reading"
         default: nil
         }
     }
@@ -138,7 +140,7 @@ final class MuseConnection {
     private(set) var noise: [Sensor: Double] = [:]
     /// The quality monitor's reason codes per electrode, e.g. `saturation`, `line_noise`.
     private(set) var reasons: [Sensor: [String]] = [:]
-    /// 0 to 1: how long each electrode has stayed good, out of the 3 s the Muse app requires.
+    /// 0 to 1: progress through the three-second EEG readiness check.
     private(set) var readyProgress: [Sensor: Double] = [:]
     private(set) var sampleRate: Double?
     private(set) var logTail: [String] = []
@@ -161,7 +163,7 @@ final class MuseConnection {
         quality(sensor) == .good ? (readyProgress[sensor] ?? 0) : 0
     }
 
-    /// Good without a break for the full fill time, as the Muse app's own fit check requires.
+    /// Good without a break for the full three-second readiness interval.
     func isReady(_ sensor: Sensor) -> Bool { progress(sensor) >= 1 }
 
     var readyCount: Int { Sensor.allCases.filter(isReady).count }

@@ -35,38 +35,48 @@ legacy marker-only rows, and processes the CSV in batches. `--sfreq` sets the
 replay sampling rate (default: 256 Hz). Live checking reads the sampling rate
 from BrainFlow, including the synthetic board's different rate.
 
-## Initial thresholds
+## Signal quality check algorithm
 
-These defaults are provisional engineering thresholds. Confirm them using clean
-and deliberately degraded live recordings before treating the labels as a
-validated contact detector. `QualityConfig` exposes all thresholds to Python
-callers; thresholds are included in every report for reproducibility.
+`src/signal_quality/quality.py` evaluates signal usability through a multi-stage
+filtering, feature extraction, and hysteresis pipeline:
 
-Checks use the latest two seconds of **raw** EEG, refreshed every 0.5 seconds:
-
-| Check | Default | Result |
-|---|---|---|
-| ADC saturation | More than 1% of samples have absolute amplitude ≥999 µV | Immediately poor |
-| Flat line | Standard deviation <0.5 µV | Immediately poor |
-| Large amplitude | Mean-centered RMS >100 µV / >200 µV on TP9 and TP10, >400 µV / >800 µV on AF7 and AF8 | Fair / poor when persistent |
-| Line noise | 50/60 Hz ±2 Hz power divided by 1–90 Hz power >25% / >50% | Fair / poor when persistent |
-| Invalid values | NaN or infinity | Unknown for the affected channel |
-| Decoder range | Absolute raw amplitude >1001 µV | Unknown; reject before squaring |
-| Estimated missing samples | More than 1% / 5% of expected samples | Stream fair / unknown |
-| No new samples | More than 0.5 seconds since the last received batch | Stream and channels unknown |
-
-The RMS is computed after subtracting the mean, so an ordinary DC offset does
-not inflate amplitude. Line-noise ratios use linear Welch PSD; this module
-does not reuse the older offline `log10(power)`/decibel threshold comparison.
-Saturation is checked before detrending, filtering, or interpolation. Raw CSV
-values are preserved, including invalid values and clipped samples.
-
-Amplitude and line-noise failures need three poor candidates in the last four
-updates to become poor. A warning appears sooner. Recovery requires three
-seconds of clean assessments after the rolling window clears. This prevents
-rapid status changes. A brief frontal blink does not alone establish poor
-contact; repeated blinks or movement can still make an interval unusable.
-The evaluator does not classify the artifact's cause or suppress blink events.
+1. **Per-sample buffering and IIR filtering (`process_eeg`)**:
+   - Maintains 3-second circular buffers (`768 x 4` at 256 Hz) for raw EEG, NaN
+     flags, and filtered EEG, triggering `process_idle` every
+     `step_samples = round(srate / 20) * 2` (`26` samples at 256 Hz, ~9.85 Hz).
+   - Filters each channel with a stateful Direct Form II Transposed (`filter_data_dfiit`)
+     cascade: 6th-order Butterworth lowpass at 36 Hz (`filter_36_lp_order6`)
+     followed by a 2nd-order Butterworth highpass at 2 Hz (`filter_2_hp_order2_fdesign`),
+     plus a parallel 2–30 Hz cascade (`filter_30_lp_order6`).
+2. **Feature extraction (`calc_var_feats`)**:
+   - Over the latest `0.5 s` (`128` samples at 256 Hz) of the 2–36 Hz signal,
+     computes per-channel population standard deviation `std_p` (`ddof=0`),
+     log sample variance `log10(var_s)` (`ddof=1`), and Pearson kurtosis `kurt`.
+3. **Per-sensor decision trees (`dt_ear`, `dt_front`)**:
+   - **Ear (`TP9`, `TP10` — `dt_ear`)**:
+     - `std_p >= 123.0 µV` → `4` (`poor`)
+     - `46.0 <= std_p < 123.0 µV` → `2` (`fair`)
+     - `5.0421 <= std_p < 46.0 µV` → `1` (`good`)
+     - `std_p < 5.0421 µV` and `log10_var >= 0.8221` ($\text{var}_s \ge 6.64\ \mu\text{V}^2$) → `1` (`good`)
+     - `std_p < 5.0421 µV` and `log10_var < 0.8221` → `4` (`poor` / `flat_line`)
+   - **Forehead (`AF7`, `AF8` — `dt_front`)**:
+     - `std_p >= 118.9837 µV` → `4` (`poor`)
+     - `46.8163 <= std_p < 118.9837 µV` → `2` (`fair`)
+     - `15.9952 <= std_p < 46.8163 µV` with previous sub-window variance
+       `prev_sub_win_var >= 265.8586 µV²` and `kurt >= 2.8146` → `4` (`poor` / `kurtosis_artifact`)
+     - Otherwise → `1` (`good`)
+4. **State machine, smoothing, and 3-epoch hold**:
+   - Tracks 15-epoch and 60-epoch raw horseshoe history (`raw_hist_15`, `raw_hist_60`),
+     per-channel `good_streak`/`bad_streak`, and the 5-state `sensor_state` machine:
+     4 consecutive good epochs (`good_streak > 3`) latch `sensor_state = 1.0` (`good`),
+     holding through brief excursions until `prop_bad_15 > 0.6` or `prop_good_60 < 0.1`;
+     `sensor_state = 4.0` caps transient bad epochs to `2` (`fair`) until `prop_bad_15 > 0.7`.
+   - Applies the 3-epoch post-transition hold (`hold_counter`), the 1-second ear
+     quietness gate (`good_data_check`: 1 s variance `< 275.0 µV²`, `sub_win_var` over
+     the latest `43` samples, capping ear channels to `fair` if `no_good_ear_counter >= 15`),
+     `is_nan_alert` (`>= 6%` NaNs in 3 s buffer), `is_noise_alert` (`>= 50%` noisy
+     epochs in last 100 epochs), and `drlref_classification` (`|DRL - REF| <= 200000`
+     and `var(|DRL - REF|) <= 87035000` over 2 s at 32 Hz for Muse 2).
 
 Loss estimation uses Muse's 16-bit packet counter when provided, allowing
 12 samples per packet and normal counter wraparound. Otherwise it uses
