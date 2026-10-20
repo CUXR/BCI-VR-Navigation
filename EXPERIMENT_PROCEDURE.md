@@ -8,7 +8,7 @@ This experiment protocol records EEG data by tightly controlling the timing of i
 
 1. **Environment**: Choose a comfortable and stable, well-lit location
 2. **Seating**: Participant sits in a comfortable chair with arms parallel and resting on a table
-3. **Pre-training**: Prior to the experiment, train the volunteer in meditation using the Muse app to help them achieve a relaxed state
+3. **Pre-training**: Prior to the experiment, train the volunteer in meditation using a guided meditation app to help them achieve a relaxed state
 4. **Visual Stimuli**: Place two cups of water on either side of the participant:
    - Each cup is 5 cm away from a hand
    - Cups are within the participant's line of sight
@@ -80,7 +80,7 @@ This experiment protocol records EEG data by tightly controlling the timing of i
 
 ## Experiment Flow
 
-1. **Pre-experiment**: Meditation training with Muse app
+1. **Pre-experiment**: Guided meditation training
 2. **Setup**: Position participant, place cups, adjust posture
 3. **Motor Imagery Blocks**: 
    - Left imagery trials

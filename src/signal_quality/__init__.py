@@ -1,6 +1,57 @@
-"""Raw Muse EEG quality monitoring, independent of the UI and classifier."""
+"""Muse EEG signal quality monitoring, independent of the UI and classifier."""
 
-from .quality import CHANNELS, QualityConfig, QualityMonitor
+from .quality import (
+    CHANNELS,
+    EAR,
+    FRONTAL,
+    HORSESHOE_TO_STATUS,
+    QualityConfig,
+    QualityMonitor,
+    SignalQualityEngine,
+    calc_isgood_feats,
+    calc_psd,
+    calc_var_feats,
+    do_psd,
+    drlref_classification,
+    dt_ear,
+    dt_front,
+    filter_2_hp_order2_fdesign,
+    filter_30_lp_order6,
+    filter_36_lp_order6,
+    filter_45_65_notch_order6,
+    filter_data_dfiit,
+    format_quality,
+    good_data_check,
+    is_epoch_good,
+    is_nan_alert,
+    is_noise_alert,
+)
 from .recording import CsvRecorder
 
-__all__ = ["CHANNELS", "QualityConfig", "QualityMonitor", "CsvRecorder"]
+__all__ = [
+    "CHANNELS",
+    "EAR",
+    "FRONTAL",
+    "HORSESHOE_TO_STATUS",
+    "QualityConfig",
+    "QualityMonitor",
+    "SignalQualityEngine",
+    "CsvRecorder",
+    "calc_isgood_feats",
+    "calc_psd",
+    "calc_var_feats",
+    "do_psd",
+    "drlref_classification",
+    "dt_ear",
+    "dt_front",
+    "filter_2_hp_order2_fdesign",
+    "filter_30_lp_order6",
+    "filter_36_lp_order6",
+    "filter_45_65_notch_order6",
+    "filter_data_dfiit",
+    "format_quality",
+    "good_data_check",
+    "is_epoch_good",
+    "is_nan_alert",
+    "is_noise_alert",
+]

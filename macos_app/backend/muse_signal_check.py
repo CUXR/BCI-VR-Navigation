@@ -38,8 +38,7 @@ from src.signal_quality import CHANNELS, QualityConfig, QualityMonitor  # noqa: 
 BOARD_ID = BoardIds.MUSE_2_BOARD.value
 UPDATE_S = 0.5
 GIVE_UP_S = 12.0
-# The Muse app's own fit check (MuseSignalQualityMonitor.EEG_FILL_MILLIS in com.interaxon.muse 55.1)
-# passes a sensor only after this many seconds of uninterrupted good readings.
+# Fit check passes a sensor only after this many seconds of uninterrupted good readings.
 READY_FILL_S = 3.0
 
 
@@ -48,7 +47,7 @@ def emit(event, **fields):
 
 
 class ReadyConveyor:
-    """Per-sensor fill toward ready, ported from the Muse app's SignalQualityQueueUpdater.
+    """Per-sensor fill toward ready.
 
     Progress grows with time spent good and drops to zero on any reading that is not good,
     so a sensor is ready (progress 1.0) only after READY_FILL_S of steady contact.
