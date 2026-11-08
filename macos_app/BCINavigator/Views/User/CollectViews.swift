@@ -9,7 +9,7 @@ struct CollectIntroView: View {
             ScreenHeader(
                 eyebrow: "Collect EEG data",
                 title: "Here is what you will do",
-                message: "A new window will open and guide you with spoken and on-screen cues. It takes about 5 to 10 minutes."
+                message: "This window guides you with spoken and on-screen cues. Turn your volume up. It takes about 5 to 10 minutes."
             )
             HStack(alignment: .top, spacing: 16) {
                 PartCard(part: "Part 1 · 20 trials", title: "Imagine grabbing a cup",
@@ -25,7 +25,7 @@ struct CollectIntroView: View {
                     "Sit comfortably with your forearms resting on the table.",
                     "A cup sits about 5 cm from each hand, where you can see it.",
                     "Raise your chin slightly and keep your head still. Moving your eyes is fine.",
-                    "In the recording window, press Space to connect to the headband, then Enter to begin.",
+                    "After you press Start, the app connects to the headband. Press Enter when you are ready to begin.",
                 ], id: \.self) { line in
                     Label(line, systemImage: "circle.fill")
                         .labelStyle(BulletLabelStyle())
@@ -80,17 +80,32 @@ private struct PartCard: View {
     }
 }
 
+/// Runs the whole recording in this window: cues, spoken instructions, key presses, and progress.
 struct RecordingView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.modelContext) private var context
+    @FocusState private var focused: Bool
     @State private var confirmStop = false
 
     var body: some View {
         let recorder = model.recorder
         ScreenScaffold(width: 760) {
             switch recorder.phase {
-            case .starting:
-                ScreenHeader(title: "Preparing to record", message: "Releasing the headband so the recording window can connect.")
+            case .idle, .starting:
+                ScreenHeader(title: "Preparing to record", message: "Releasing the headband from the sensor check.")
+                ProgressView()
+            case .connecting(let attempt):
+                ScreenHeader(title: "Connecting to the headband",
+                             message: attempt > 1
+                                 ? "Still trying (attempt \(attempt) of 3). Keep the headband on, turned on, and nearby."
+                                 : "This takes a few seconds. Keep the headband on and sit still.")
+                ProgressView()
+            case .ready:
+                ScreenHeader(eyebrow: "Collect EEG data", title: "Ready when you are",
+                             message: "The headband is connected. Rest your forearms on the table, raise your chin slightly, and press Enter to begin.")
+                keyLegend
+            case .saving:
+                ScreenHeader(title: "Saving your data", message: "This takes a moment. Keep the headband on until it finishes.")
                 ProgressView()
             case .failed(let message):
                 ScreenHeader(title: "Recording could not run", message: message)
@@ -107,39 +122,82 @@ struct RecordingView: View {
             case .finished(saved: false):
                 ScreenHeader(title: "Recording stopped",
                              message: "No EEG data was saved this time. Check that the headband is on and try again.")
+            case .finished(saved: true):
+                ScreenHeader(title: "Recording saved")
             default:
-                running(recorder)
+                session(recorder)
             }
         } leading: {
-            if !recorder.isRunning {
+            if recorder.isRecording {
+                HStack(spacing: 4) {
+                    Text("Press")
+                    KeyCap(key: "Esc").scaleEffect(0.8)
+                    Text("to stop. Your data so far is saved.")
+                }
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+            } else if !recorder.isRunning {
                 Button("Back") {
                     recorder.reset()
                     model.screen = .collectIntro
                 }
-            } else {
-                Text("Press Esc in the recording window to stop and keep your data.")
-                    .font(.system(size: 14)).foregroundStyle(.secondary)
             }
         } trailing: {
-            if recorder.isRunning {
-                Button("Force Stop", role: .destructive) { confirmStop = true }
-                    .disabled(recorder.phase == .starting)
-                    .confirmationDialog("Force stop the recording?", isPresented: $confirmStop) {
-                        Button("Force Stop", role: .destructive) { recorder.forceStop() }
-                    } message: {
-                        Text("This closes the recording window without saving. To keep your data, press Esc in the recording window instead.")
-                    }
-            } else {
-                Button("Try Again") { model.startRecording() }
-                    .buttonStyle(.borderedProminent)
-            }
+            trailing(recorder)
+        }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focused)
+        .onAppear { focused = true }
+        .onKeyPress(.space) {
+            recorder.pressSpace()
+            return .handled
+        }
+        .onKeyPress(.return) {
+            recorder.pressEnter()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            guard recorder.canStop else { return .ignored }
+            recorder.stopAndSave()
+            return .handled
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "bB"), phases: .down) { _ in
+            recorder.pressBlink()
+            return .handled
         }
         .onChange(of: recorder.phase, initial: true) { _, phase in
+            // Keep Space, B, Enter and Esc working after a click or a dialog.
+            focused = true
             if case .finished(saved: true) = phase { model.recordingEnded(context: context) }
         }
     }
 
-    @ViewBuilder private func running(_ recorder: RecorderRunner) -> some View {
+    @ViewBuilder private func trailing(_ recorder: RecorderRunner) -> some View {
+        switch recorder.phase {
+        case .ready:
+            Button("Cancel") { recorder.stopAndSave() }
+            Button("Start") { recorder.begin() }
+                .buttonStyle(.borderedProminent)
+        case .connecting:
+            Button("Cancel") { recorder.stopAndSave() }
+        case .failed, .finished(saved: false):
+            Button("Try Again") { model.startRecording() }
+                .buttonStyle(.borderedProminent)
+        default:
+            if recorder.isRecording {
+                Button("Stop and Save") { confirmStop = true }
+                    .disabled(!recorder.canStop)
+                    .confirmationDialog("Stop the recording now?", isPresented: $confirmStop) {
+                        Button("Stop and Save", role: .destructive) { recorder.stopAndSave() }
+                    } message: {
+                        Text("Everything recorded so far is saved, and this session ends.")
+                    }
+            }
+        }
+    }
+
+    @ViewBuilder private func session(_ recorder: RecorderRunner) -> some View {
         HStack(spacing: 14) {
             Circle().fill(Palette.bad).frame(width: 18, height: 18)
                 .background(Palette.bad.opacity(0.14), in: .circle.inset(by: -6))
@@ -151,25 +209,30 @@ struct RecordingView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        Text("Follow the cues in the recording window. This window keeps track of your progress.")
-            .font(.system(size: 17)).foregroundStyle(.secondary)
-        VStack(alignment: .leading, spacing: 22) {
-            PartProgress(
-                title: "Part 1 · Imagine grabbing a cup",
-                done: recorder.imageryDone, total: RecorderRunner.imageryTarget,
-                detail: recorder.currentCue.map { "Now: \($0) · round \(recorder.imageryRound) of \(RecorderRunner.imageryTarget / 2)" }
-                    ?? (recorder.imageryDone == 0 ? "Waiting for the recording window to start" : nil),
-                active: recorder.imageryDone < RecorderRunner.imageryTarget
-            )
-            Divider()
-            PartProgress(
-                title: "Part 2 · Blink on purpose",
-                done: recorder.blinksDone, total: RecorderRunner.blinkTarget,
-                detail: recorder.imageryDone < RecorderRunner.imageryTarget ? "Starts after Part 1" : "Blink and press B",
-                active: recorder.imageryDone >= RecorderRunner.imageryTarget
-            )
+        if recorder.connection == .signalLost {
+            Label("Lost the headband signal. Sit still and check that the headband is on. Recording continues.",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Palette.bad)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.bad.opacity(0.08), in: .rect(cornerRadius: 12))
         }
-        .card(padding: 24)
+        CueStage(recorder: recorder)
+            .frame(maxWidth: .infinity, minHeight: 340)
+            .card(padding: 24)
+        HStack(alignment: .top, spacing: 28) {
+            PartProgress(title: "Part 1 · Imagine grabbing", done: recorder.imageryDone,
+                         total: RecorderRunner.imageryTarget, detail: nil,
+                         active: recorder.imageryDone < RecorderRunner.imageryTarget)
+            PartProgress(title: "Part 2 · Blink on purpose", done: recorder.blinksDone,
+                         total: RecorderRunner.blinkTarget, detail: nil,
+                         active: recorder.imageryDone >= RecorderRunner.imageryTarget)
+        }
+        .card(padding: 20)
+    }
+
+    private var keyLegend: some View {
         HStack(spacing: 18) {
             Text("Keys").fontWeight(.semibold)
             HStack(spacing: 6) { KeyCap(key: "Space"); Text("done imagining") }
@@ -177,6 +240,101 @@ struct RecordingView: View {
             HStack(spacing: 6) { KeyCap(key: "Esc"); Text("stop and save") }
         }
         .card(padding: 14)
+    }
+}
+
+private extension RecorderRunner.Cue {
+    var color: Color {
+        switch self {
+        case .left: Color(red: 0.0, green: 0.45, blue: 0.85)
+        case .right: Palette.good
+        }
+    }
+    var arrowLabel: String { self == .left ? "← LEFT" : "RIGHT →" }
+}
+
+/// The large cue area: what the participant should do right now.
+private struct CueStage: View {
+    var recorder: RecorderRunner
+
+    var body: some View {
+        VStack(spacing: 18) {
+            switch recorder.phase {
+            case .listening(let cue):
+                listening(title: "Round \(recorder.round) of \(RecorderRunner.rounds) · \(cue.title) hand", color: cue.color)
+            case .imagining(let cue):
+                ZStack {
+                    Circle().fill(cue.color.opacity(0.1))
+                    Circle().strokeBorder(cue.color, lineWidth: 8)
+                    Text(cue.arrowLabel).font(.system(size: 52, weight: .heavy)).foregroundStyle(cue.color)
+                }
+                .frame(width: 220, height: 220)
+                Text("Imagine grabbing the cup with your \(cue.rawValue) hand.")
+                    .font(.system(size: 20, weight: .semibold))
+                HStack(spacing: 8) {
+                    Text("Press")
+                    KeyCap(key: "Space")
+                    Text("when you finish imagining")
+                }
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+            case .resting(let until):
+                TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                    Text("\(max(0, Int(until.timeIntervalSince(context.date).rounded(.up))))")
+                        .font(.system(size: 96, weight: .bold)).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                Text("Rest. Relax and get ready for the next one.")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            case .blinkIntro:
+                listening(title: "Part 2 · Blink on purpose", color: Palette.adjust)
+            case .blinking:
+                Text("\(recorder.blinksDone) of \(RecorderRunner.blinkTarget)")
+                    .font(.system(size: 72, weight: .bold)).monospacedDigit()
+                    .foregroundStyle(Palette.adjust)
+                TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                    let fresh = recorder.lastBlinkAt.map { context.date.timeIntervalSince($0) < 0.6 } ?? false
+                    Label("Blink recorded", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Palette.good)
+                        .opacity(fresh ? 1 : 0)
+                }
+                HStack(spacing: 8) {
+                    Text("Blink once, on purpose, and press")
+                    KeyCap(key: "B")
+                    Text("at the same moment")
+                }
+                .font(.system(size: 18, weight: .semibold))
+                if let notice = recorder.notice {
+                    Text(notice).font(.system(size: 15)).foregroundStyle(Palette.bad)
+                }
+                HStack(spacing: 6) {
+                    Text("Press")
+                    KeyCap(key: "Enter").scaleEffect(0.8)
+                    Text("to finish early")
+                }
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+            default:
+                ProgressView()
+                Text("Starting the recording…").font(.system(size: 18)).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeOut(duration: 0.15), value: recorder.phase)
+    }
+
+    private func listening(title: String, color: Color) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.system(size: 54))
+                .foregroundStyle(color)
+                .symbolEffect(.variableColor.iterative)
+            Text("Listen to the instruction")
+                .font(.system(size: 24, weight: .bold))
+            Text(title).font(.system(size: 16)).foregroundStyle(.secondary)
+        }
     }
 }
 

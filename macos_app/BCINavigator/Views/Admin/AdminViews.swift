@@ -215,7 +215,7 @@ struct AdminSettingsView: View {
                         help: "The BCI checkout that contains src/ and data/.")
                 PathRow(title: "Python interpreter", path: $settings.pythonPath, directory: false,
                         valid: FileManager.default.isExecutableFile(atPath: settings.pythonPath),
-                        help: "An environment with BrainFlow and PsychoPy installed, for example .venv/bin/python.")
+                        help: "An environment with BrainFlow installed, for example .venv/bin/python.")
             } header: {
                 Text("Recorder")
             }
