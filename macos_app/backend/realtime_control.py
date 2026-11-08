@@ -153,7 +153,15 @@ async def run(args):
         emit("error", message=f"The model could not be loaded from {model.path}.")
         return 2
     info = getattr(model, "bundle", None) or {}
-    emit("model", kind="group", subjects=len(info.get("subjects", []) or []),
+    if args.participant is not None and (
+        info.get("participant_id") != args.participant
+        or info.get("model_version") != "personalized_app_v1"
+        or model.mi_label_names() != ["left_motor_imagery", "right_motor_imagery"]
+    ):
+        emit("error", message="This personal model does not match your profile or the app's hand controls. Retrain it from your recordings.")
+        return 2
+    emit("model", kind="personalized" if info.get("model_kind") == "personalized" else "group",
+         subjects=len(info.get("subjects", []) or []),
          trained=str(info.get("training_date", "")) or None)
 
     ws_server = None
@@ -248,6 +256,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--serial", default=None, help="Muse Bluetooth name, e.g. Muse-15C3")
     parser.add_argument("--model", default=str(MODEL_PATH), help="Model bundle (.pkl); default is the group model")
+    parser.add_argument("--participant", type=int, help="Verify an app personal model belongs to this participant")
     parser.add_argument("--mi-threshold", type=float, default=None)
     parser.add_argument("--blink-threshold", type=float, default=None)
     parser.add_argument("--ws-port", type=int, default=WS_PORT)

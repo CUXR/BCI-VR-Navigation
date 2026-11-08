@@ -118,10 +118,10 @@ Condensed from `EXPERIMENT_PROCEDURE.md`, matched to what the recorder runs.
 Design reference: https://claude.ai/artifact/XeH32hFAF7HmQJvyQsWgFz
 
 - Reached from the sidebar, a "Real-time Control" button on Home, or "Try Real-time Control" on the session-saved screen. It does not require a recorded session.
-- **Get ready**: what each thought does (imagine left hand → Turn left, right hand → Turn right, deliberate blink → Select), the model choice (Group model selected; "Your own model" shown disabled as Coming soon, pending a personal-model trainer for the app's left/right recordings), and a checklist: headband sensors checked this visit, and the VR app (optional).
+- **Get ready**: what each thought does (imagine left hand → Turn left, right hand → Turn right, deliberate blink → Select), the model choice (Group model initially selected; Train/Retrain Your Model fits the signed-in participant's saved left/right and blink recordings, then selects Your own model), and a checklist: headband sensors checked this visit, and the VR app (optional).
 - The sensor check is recommended, not required. Without it the row reads "Not checked" and Check Sensors sits beside Start. Check Sensors runs the normal calibration screens; passing returns here and does not mark the recording session's calibration done. The check is remembered until sign-out.
 - **Live**: three tiles (← Left, Select, Right →) light in the action's color when recognized; a blink keeps its tile lit for 0.8 s. A confidence bar shows the recognized action's confidence, or the leading hand's confidence while resting, with a tick at the level needed, plus "Steady" when the smoother agrees. Status chips show the headband and whether the VR app is connected. Sensitivity sliders (30 to 95%, steps of 5; defaults 55% turning, 60% blink, from `eeg_to_meta/config.py`) apply on the next 100 ms tick and are remembered. Recent lists the last actions with confidence and age. Stop releases the headband and returns to Get ready. Nothing is recorded.
-- **Backend**: `macos_app/backend/realtime_control.py [--serial <serial>] --mi-threshold <0-1> --blink-threshold <0-1>`, after the app stops its calibration helper. It reuses `eeg_to_meta` (ring buffer, InferenceEngine, PredictionSmoother, the group model `ml_pipeline/models/realtime_models.pkl`) and serves Unity on `ws://127.0.0.1:8765` with the same frames as `python -m pipeline realtime`. To the app it prints JSON lines (`status`, `model`, `prediction` with `intent` left/right/blink/idle, `confidence`, `stable`, `leaning`, `leaning_confidence`, `vr` with the client count, `warning`, `error`); it accepts `{"cmd": "thresholds", "mi", "blink"}` and `{"cmd": "stop"}` on stdin. If port 8765 is taken, it keeps running without the VR link and says so.
+- **Backend**: `macos_app/backend/realtime_control.py [--serial <serial>] --mi-threshold <0-1> --blink-threshold <0-1>`, after the app stops its calibration helper. It reuses `eeg_to_meta` (ring buffer, InferenceEngine, PredictionSmoother, and either the group model `ml_pipeline/models/realtime_models.pkl` or the selected personal model via `--model <path> --participant NN`) and serves Unity on `ws://127.0.0.1:8765` with the same frames as `python -m pipeline realtime`. To the app it prints JSON lines (`status`, `model`, `prediction` with `intent` left/right/blink/idle, `confidence`, `stable`, `leaning`, `leaning_confidence`, `vr` with the client count, `warning`, `error`); it accepts `{"cmd": "thresholds", "mi", "blink"}` and `{"cmd": "stop"}` on stdin. If port 8765 is taken, it keeps running without the VR link and says so.
 
 ## 7. Admin mode
 
@@ -146,7 +146,7 @@ The app runs the existing Python code as child processes and reads their output.
 | `python .../muse_psychopy_recording_structured.py --name --number --serial` | Collect EEG data (in-app UI plus `macos_app/backend/muse_session_recorder.py`) |
 | `python src/pilot_data_collection/stream_save_muse.py` | Calibration sensor check (`macos_app/backend/muse_signal_check.py`) |
 | `python -m pipeline realtime` | Real-time control (`macos_app/backend/realtime_control.py`) |
-| `python -m pipeline personalize` | Your own model, later version |
+| `python macos_app/backend/train_personal_model.py --participant NN` | Train/retrain Your own model from app recordings |
 
 The shipping target bundles the Python runtime inside the `.app`. Until that build step exists, Settings points at a local interpreter (default `<repo>/.venv/bin/python`) and repo checkout.
 
@@ -154,5 +154,5 @@ The shipping target bundles the Python runtime inside the `.app`. Until that bui
 
 - Tune the quality thresholds against fresh fitting sessions.
 - Bundled Python runtime.
-- Your own model: train a personal left/right + blink model from the app's recordings and offer it on the Get ready screen.
-- Model training and cross-subject analysis stay on the command line.
+- Personal-model control accuracy still needs headband validation across sessions; training and model selection are integrated.
+- Group-model training and cross-subject analysis stay on the command line.

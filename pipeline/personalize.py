@@ -428,7 +428,9 @@ class FitResult:
     mi_class_counts: dict[str, int]
 
 
-def fit_personalized_models(data: ParticipantData) -> FitResult:
+def fit_personalized_models(
+    data: ParticipantData, *, class_names=ml_config.MI_CLASS_NAMES_4CLASS,
+) -> FitResult:
     mi_pipeline = None
     mi_cv = None
     mi_train_acc = None
@@ -436,7 +438,7 @@ def fit_personalized_models(data: ParticipantData) -> FitResult:
     if data.mi_epochs:
         X_mi = extract_mi_features_batch(data.mi_epochs, ml_config.TARGET_SFREQ)
         y_mi = np.asarray(data.mi_labels)
-        for cname, cidx in zip(ml_config.MI_CLASS_NAMES_4CLASS, range(4)):
+        for cidx, cname in enumerate(class_names):
             mi_class_counts[cname] = int(np.sum(y_mi == cidx))
         if len(np.unique(y_mi)) >= 2 and X_mi.shape[0] >= 4:
             mi_pipeline = _build_mi_pipeline()

@@ -237,6 +237,10 @@ ml_pipeline/client_secret_*.json
 ml_pipeline/*.pem
 ml_pipeline/.env
 
+# Personal models generated locally by the macOS app
+/ml_pipeline/models/participants/*_app.pkl
+/ml_pipeline/models/participants/.training-*/
+
 # Unity generated files
 **/Library/
 **/Temp/

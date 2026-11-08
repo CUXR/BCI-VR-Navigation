@@ -254,7 +254,7 @@ def apply_asr(data_2d, sfreq, cutoff=None):
 # Full preprocessing pipelines
 # ═══════════════════════════════════════════════════════════════════
 
-def preprocess_mi_epoch(epoch_2d, sfreq):
+def preprocess_mi_epoch(epoch_2d, sfreq, *, use_asr=True):
     """Full preprocessing for a motor imagery epoch.
 
     Pipeline:
@@ -286,7 +286,7 @@ def preprocess_mi_epoch(epoch_2d, sfreq):
         sig = moving_artifact_removal(sig, sfreq, threshold_std=3.0)
         out[ch] = sig
 
-    if n_ch >= 2 and n_samp >= int(sfreq * 1.0) and _HAS_ASR:
+    if n_ch >= 2 and n_samp >= int(sfreq * 1.0) and _HAS_ASR and use_asr:
         try:
             out = apply_asr(out, sfreq, cutoff=ASR_CUTOFF_MI)
         except Exception:

@@ -142,7 +142,7 @@ def _resample_if_needed(data_2d, sfreq_orig, sfreq_target=None):
 # Motor imagery epoch extraction
 # ═══════════════════════════════════════════════════════════════════
 
-def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None):
+def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True):
     """Extract and preprocess motor imagery epochs.
 
     Args:
@@ -184,7 +184,7 @@ def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None):
             pad_width = fixed_samples - raw_seg.shape[1]
             raw_seg = np.pad(raw_seg, ((0, 0), (0, pad_width)), mode="edge")
 
-        cleaned = preprocess_mi_epoch(raw_seg, actual_sfreq)
+        cleaned = preprocess_mi_epoch(raw_seg, actual_sfreq, use_asr=use_asr)
 
         # Per-epoch quality gate
         ch_quality = score_channel_quality_epoch(cleaned, actual_sfreq)
