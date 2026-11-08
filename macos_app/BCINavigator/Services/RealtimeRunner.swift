@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Runs `macos_app/backend/realtime_control.py`, which reads the headband, classifies each
-/// 100 ms tick with the group model, and serves predictions to the VR app on
+/// 100 ms tick with the selected model, and serves predictions to the VR app on
 /// ws://127.0.0.1:8765. This class publishes what the helper reports and sends it
 /// sensitivity changes while it runs.
 @Observable
@@ -45,6 +45,7 @@ final class RealtimeRunner {
     /// Why the VR link is not available, if it failed to start.
     private(set) var vrProblem: String?
     private(set) var modelSubjects: Int?
+    private(set) var modelKind = "group"
     private(set) var recent: [Action] = []
     private(set) var logTail: [String] = []
 
@@ -70,7 +71,7 @@ final class RealtimeRunner {
 
     // MARK: - Lifecycle
 
-    func start(settings: AppSettings, headband: MuseConnection) {
+    func start(settings: AppSettings, headband: MuseConnection, modelURL: URL? = nil, participant: Int? = nil) {
         guard !isRunning else { return }
         reset()
         phase = .starting
@@ -90,6 +91,8 @@ final class RealtimeRunner {
             "--mi-threshold", String(settings.miThreshold),
             "--blink-threshold", String(settings.blinkThreshold),
         ]
+        if let modelURL { arguments += ["--model", modelURL.path] }
+        if let participant { arguments += ["--participant", String(participant)] }
         let serial = settings.museSerial.trimmingCharacters(in: .whitespaces)
         if !serial.isEmpty { arguments += ["--serial", serial] }
 
@@ -178,6 +181,7 @@ final class RealtimeRunner {
         vrClients = nil
         vrProblem = nil
         modelSubjects = nil
+        modelKind = "group"
         recent = []
         logTail = []
         pending = ""
@@ -228,6 +232,7 @@ final class RealtimeRunner {
             }
         case "model":
             modelSubjects = object["subjects"] as? Int
+            modelKind = object["kind"] as? String ?? "group"
         case "vr":
             vrClients = object["clients"] as? Int
         case "prediction":

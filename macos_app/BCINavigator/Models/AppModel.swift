@@ -39,13 +39,15 @@ final class AppModel {
     let headband = MuseConnection()
     let recorder = RecorderRunner()
     let realtime = RealtimeRunner()
+    let trainer = PersonalModelTrainer()
+    var usePersonalModel = false
     /// Sensors were checked during this sign-in. Real-time control recommends it but can skip it.
     private(set) var calibratedThisVisit = false
     /// Where passing the sensor check leads: data collection, or back to real-time control.
     private(set) var calibrationReturnsTo: UserScreen = .collectIntro
 
-    /// A recording or real-time session holds the headband; navigation and sign-out wait.
-    var isBusy: Bool { recorder.isRunning || realtime.isRunning }
+    /// Keep the participant and recording files fixed while a helper is working.
+    var isBusy: Bool { recorder.isRunning || realtime.isRunning || trainer.isRunning }
 
     var dataFolder: DataFolder { DataFolder(root: settings.dataURL) }
 
@@ -85,6 +87,8 @@ final class AppModel {
         session = nil
         recorder.reset()
         realtime.reset()
+        trainer.reset()
+        usePersonalModel = false
         calibratedThisVisit = false
         calibrationReturnsTo = .collectIntro
         screen = .signIn
@@ -167,9 +171,16 @@ final class AppModel {
     // MARK: - Real-time control
 
     func openRealtime() {
-        guard participant != nil, !isBusy else { return }
+        guard let participant, !isBusy else { return }
         realtime.reset()
+        trainer.refresh(settings: settings, participant: participant.subjectNumber)
+        if trainer.modelURL == nil { usePersonalModel = false }
         screen = .realtimeIntro
+    }
+
+    func trainPersonalModel() {
+        guard let participant, !isBusy else { return }
+        trainer.start(settings: settings, participant: participant.subjectNumber)
     }
 
     /// Sensor check on the way to real-time control; passing it comes back here.
@@ -179,9 +190,13 @@ final class AppModel {
     }
 
     func startRealtime() {
-        guard participant != nil, !isBusy else { return }
+        guard let participant, !isBusy else { return }
+        trainer.refresh(settings: settings, participant: participant.subjectNumber)
+        guard !usePersonalModel || trainer.modelURL != nil else { return }
         screen = .realtimeLive
-        realtime.start(settings: settings, headband: headband)
+        realtime.start(settings: settings, headband: headband,
+                       modelURL: usePersonalModel ? trainer.modelURL : nil,
+                       participant: usePersonalModel ? participant.subjectNumber : nil)
     }
 
     /// The live screen goes back to the intro once the helper has released the headband.
@@ -198,7 +213,7 @@ final class AppModel {
     }
 
     func startRecording() {
-        guard let participant, !recorder.isRunning else { return }
+        guard let participant, !isBusy else { return }
         screen = .recording
         recorder.start(settings: settings, participant: participant, headband: headband)
     }
@@ -279,7 +294,7 @@ final class AppModel {
         case .calibration: session?.calibrationDone == true ? "All sensors green" : "Fit headband, check sensors"
         case .collect:
             if session?.collectionDone == true { "Saved" }
-            else if recorder.isRunning { "Recording, \(recorder.imageryDone + recorder.blinksDone) of \(RecorderRunner.imageryTarget + RecorderRunner.blinkTarget) trials" }
+            else if recorder.isRunning { "Recording, \(recorder.imageryDone + recorder.blinksDone) of \(recorder.imageryTarget + recorder.blinkTarget) trials" }
             else { "About 5 to 10 minutes" }
         case .realtime:
             if realtime.isRunning { realtime.vrConnected ? "Live · VR app connected" : "Live · VR app not open" }

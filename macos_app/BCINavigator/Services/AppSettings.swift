@@ -53,6 +53,12 @@ final class AppSettings {
     var realtimeScriptURL: URL {
         repoURL.appending(path: "macos_app/backend/realtime_control.py")
     }
+    var trainingScriptURL: URL {
+        repoURL.appending(path: "macos_app/backend/train_personal_model.py")
+    }
+    func personalModelURL(participant: Int) -> URL {
+        repoURL.appending(path: String(format: "ml_pipeline/models/participants/sub%02d_app.pkl", participant))
+    }
 
     /// Development default: the repo checkout this source file was compiled from
     /// (`<repo>/macos_app/BCINavigator/Services/AppSettings.swift`).

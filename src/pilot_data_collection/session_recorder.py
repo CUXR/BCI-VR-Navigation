@@ -152,6 +152,8 @@ class SessionRecorder:
         self.stop_recording_flag = threading.Event()
         self._flush_recording = threading.Event()
         self._recording_flushed = threading.Event()
+        self._recording_end_time = None
+        self._last_recorded_timestamp = None
         self.buffer_lock = threading.Lock()
         self.trial_lock = threading.Lock()  # Lock for trial access
         
@@ -355,7 +357,12 @@ class SessionRecorder:
                                 samples.append({"timestamp": ts, "eeg_data": eeg[:, i].tolist(),
                                                 "marker_code": None, "marker_label": None})
                             self._record_rows(samples)
-                if flush_requested:
+                            self._last_recorded_timestamp = float(timestamps[-1])
+                if flush_requested and (
+                    self._recording_end_time is None
+                    or (self._last_recorded_timestamp is not None
+                        and self._last_recorded_timestamp >= self._recording_end_time)
+                ):
                     with self.buffer_lock:
                         self.is_recording = False
                     self._recording_flushed.set()
@@ -391,6 +398,8 @@ class SessionRecorder:
             self.trials = []
             self._flush_recording.clear()
             self._recording_flushed.clear()
+            self._recording_end_time = None
+            self._last_recorded_timestamp = None
             self.recording_error = None
             self.is_recording = True
         print("Recording started.")
@@ -401,6 +410,13 @@ class SessionRecorder:
             return
         if self.current_trial is not None:
             self.end_trial()
+        # A blink is logged immediately, but its post-event samples arrive later.
+        # Wait for EEG coverage, not just one drain of the Bluetooth buffer.
+        self._recording_end_time = max(
+            (trial.event_marker + self.blink_window_ms / 1000.0
+             for trial in self.trials if trial.event_marker is not None),
+            default=None,
+        )
         self._flush_recording.set()
         if self.recording_thread.is_alive() and not self._recording_flushed.wait(timeout=3):
             self.recording_error = "EEG reader did not flush the recording tail"
@@ -538,7 +554,7 @@ class SessionRecorder:
                 self._record_rows([marker_sample])
             
             # End trial immediately (event-centered)
-            self.end_trial(at=marker_time)
+            self.end_trial(at=marker_time + self.blink_window_ms / 1000.0)
             
             print(f"Blink marker added: {label} (code={code}) at {marker_time:.3f}")
             return True

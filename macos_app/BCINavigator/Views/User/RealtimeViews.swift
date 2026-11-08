@@ -35,9 +35,21 @@ struct RealtimeIntroView: View {
             }
             VStack(alignment: .leading, spacing: 12) {
                 Text("Which model reads your signal?").font(.system(size: 17, weight: .semibold))
-                ModelOption(title: "Group model", detail: "Trained on earlier participants' recordings. Works right away.", selected: true)
-                ModelOption(title: "Your own model", detail: "Trained on your recordings. Coming soon.", selected: false)
-                    .disabled(true)
+                Button { model.usePersonalModel = false } label: {
+                    ModelOption(title: "Group model", detail: "Trained on earlier participants' recordings. Works right away.", selected: !model.usePersonalModel)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.trainer.isRunning)
+                Button { model.usePersonalModel = true } label: {
+                    ModelOption(title: "Your own model",
+                                detail: model.trainer.modelURL == nil
+                                    ? "Train on your saved hand and blink recordings."
+                                    : "Ready to use. Retrain after collecting more recordings.",
+                                selected: model.usePersonalModel)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.trainer.modelURL == nil || model.trainer.isRunning)
+                trainingControls
             }
             .card(padding: 20)
             VStack(alignment: .leading, spacing: 12) {
@@ -52,11 +64,13 @@ struct RealtimeIntroView: View {
             .card(padding: 20)
         } leading: {
             Button("Back") { model.screen = .home }
+                .disabled(model.isBusy)
         } trailing: {
             if !model.calibratedThisVisit {
                 Text("Skipping the sensor check can make control less reliable.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
                 Button("Check Sensors") { model.checkSensorsForRealtime() }
+                    .disabled(model.isBusy)
             } else {
                 Text("You can try it without the VR app.")
                     .font(.system(size: 14)).foregroundStyle(.secondary)
@@ -64,6 +78,44 @@ struct RealtimeIntroView: View {
             Button("Start Real-time Control") { model.startRealtime() }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
+                .disabled(model.isBusy || (model.usePersonalModel && model.trainer.modelURL == nil))
+        }
+        .onChange(of: model.trainer.phase) { _, phase in
+            if case .trained = phase { model.usePersonalModel = true }
+        }
+    }
+
+    @ViewBuilder private var trainingControls: some View {
+        let trainer = model.trainer
+        if trainer.isRunning {
+            HStack(spacing: 12) {
+                ProgressView().controlSize(.small)
+                Text(trainer.phase == .cancelling ? "Cancelling training…" : "Training on your saved recordings…")
+                Spacer()
+                Button("Cancel") { trainer.cancel() }.disabled(trainer.phase == .cancelling)
+            }
+        } else {
+            HStack {
+                Text("Training stays on this Mac. A personal model may need several sessions to work well.")
+                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                Spacer()
+                Button(trainer.modelURL == nil ? "Train Your Model" : "Retrain Your Model") {
+                    model.trainPersonalModel()
+                }
+            }
+        }
+        switch trainer.phase {
+        case .trained(let message):
+            Text(message).font(.system(size: 14)).foregroundStyle(Palette.good)
+        case .failed(let message):
+            Text(message).font(.system(size: 14)).foregroundStyle(Palette.adjust)
+            if trainer.modelURL != nil {
+                Text("Your previously trained model is still available.").font(.system(size: 13)).foregroundStyle(.secondary)
+            }
+        case .cancelled:
+            Text("Training cancelled.").font(.system(size: 14)).foregroundStyle(.secondary)
+        default:
+            EmptyView()
         }
     }
 }
@@ -199,13 +251,15 @@ struct RealtimeLiveView: View {
 
 private struct LivePanel: View {
     @Environment(AppModel.self) private var model
+    @State private var environment = VREnvironmentLauncher()
     var runner: RealtimeRunner
     var settings: AppSettings
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(runner.modelSubjects.map { "Real-time control · Group model (\($0) participants)" } ?? "Real-time control · Group model")
+                Text(runner.modelKind == "personalized" ? "Real-time control · Your own model"
+                     : runner.modelSubjects.map { "Real-time control · Group model (\($0) participants)" } ?? "Real-time control · Group model")
                     .font(.system(size: 14, weight: .semibold)).foregroundStyle(.tint)
                 Text("Live control").font(.system(size: 36, weight: .bold)).kerning(-0.6)
             }
@@ -219,6 +273,27 @@ private struct LivePanel: View {
             Label(problem, systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Palette.adjust)
+        }
+        HStack(spacing: 12) {
+            Button {
+                Task { await environment.open(settings: settings) }
+            } label: {
+                Label(environment.isOpening ? "Opening…" : "Open VR environment", systemImage: "visionpro")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(environment.isOpening)
+            if environment.isOpening {
+                ProgressView().controlSize(.small)
+            }
+            Text(runner.vrConnected
+                 ? "Connected. Left/right predictions turn the view."
+                 : "Opens on this Mac and connects to your live model.")
+                .font(.system(size: 13)).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        if let problem = environment.problem {
+            Label(problem, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 14)).foregroundStyle(Palette.adjust)
         }
         TimelineView(.periodic(from: .now, by: 0.1)) { context in
             RecognitionCard(runner: runner, settings: settings, now: context.date)

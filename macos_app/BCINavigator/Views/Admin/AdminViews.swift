@@ -221,9 +221,11 @@ struct AdminSettingsView: View {
                 PathRow(title: "Repo folder", path: $settings.repoPath, directory: true,
                         valid: FileManager.default.fileExists(atPath: settings.recorderScriptURL.path),
                         help: "The BCI checkout that contains src/ and data/.")
+                    .disabled(model.isBusy)
                 PathRow(title: "Python interpreter", path: $settings.pythonPath, directory: false,
                         valid: FileManager.default.isExecutableFile(atPath: settings.pythonPath),
                         help: "An environment with BrainFlow installed, for example .venv/bin/python.")
+                    .disabled(model.isBusy)
             } header: {
                 Text("Recorder")
             }
