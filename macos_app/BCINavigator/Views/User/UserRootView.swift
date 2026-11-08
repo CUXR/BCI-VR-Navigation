@@ -74,7 +74,8 @@ struct StepTimeline: View {
                 }
                 if let serial = model.headband.serial ?? model.session?.headband {
                     Divider()
-                    HeadbandStatusLine(code: AppSettings.shortCode(serial), connection: model.headband.connection)
+                    HeadbandStatusLine(code: AppSettings.shortCode(serial),
+                                       connection: model.recorder.isRunning ? model.recorder.connection : model.headband.connection)
                 }
             }
             .padding(12)

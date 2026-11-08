@@ -37,7 +37,7 @@ final class AppSettings {
         repoURL.appending(path: "macos_app/backend/muse_signal_check.py")
     }
     var recorderScriptURL: URL {
-        repoURL.appending(path: "src/pilot_data_collection/psychopy_recording/muse_psychopy_recording_structured.py")
+        repoURL.appending(path: "macos_app/backend/muse_session_recorder.py")
     }
 
     /// Development default: the repo checkout this source file was compiled from

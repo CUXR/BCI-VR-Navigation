@@ -14,7 +14,8 @@ BCI-VR Navigation Control: Decodes left/right motor imagery and intentional blin
 # Python 3.10, uses uv package manager
 pip install -r requirements.txt
 
-# Run the main experiment (requires Muse headband connected)
+# Run the main experiment: the macOS app (macos_app/README.md) runs the cues in SwiftUI and records through
+# macos_app/backend/muse_session_recorder.py. Legacy PsychoPy version, same files and schema:
 python src/pilot_data_collection/psychopy_recording/muse_psychopy_recording_structured.py --name <name> --number <subject_number>
 # e.g. python src/pilot_data_collection/psychopy_recording/muse_psychopy_recording_structured.py --name alan --number 6
 # Creates data/sub06/metadata.yaml automatically
@@ -34,7 +35,7 @@ Three-layer design:
 
 1. **Hardware/Streaming** (`src/pilot_data_collection/stream_save_muse.py`, `src/realtime_monitoring/stream_realtime_bandpower.py`, `src/pilot_data_collection/rebroadcast_*.py`): BrainFlow interface for Muse 2. Streams EEG to CSV or rebroadcasts for consumers.
 
-2. **Experiment/Recording** (`src/pilot_data_collection/psychopy_recording/muse_psychopy_recording_structured.py`): The active experiment implementation. PsychoPy-based visual cue paradigm with threaded background EEG collection. Core class `MusePsychopyRecorder` orchestrates trials via state machine (`ExperimentState` enum). Produces two CSVs per session: raw EEG data + unified trial log.
+2. **Experiment/Recording**: The macOS app (`macos_app/`, SwiftUI) runs the cue paradigm and drives the headless helper `macos_app/backend/muse_session_recorder.py`. Core class `SessionRecorder` (`src/pilot_data_collection/session_recorder.py`) does threaded background EEG collection and the trial log. Produces two CSVs per session: raw EEG data + unified trial log. The PsychoPy script (`src/pilot_data_collection/psychopy_recording/`) is the legacy UI over the same class.
 
 3. **Analysis** (`data/analyze_all.py`, `src/signal_processing/eeg_filters.py`): Signal processing (MNE-based bandpass/notch filtering, artifact removal) and cross-subject visualization (PSD, band power, epoch averaging, L/R comparison).
 

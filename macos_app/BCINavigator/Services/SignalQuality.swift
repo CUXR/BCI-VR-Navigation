@@ -265,7 +265,7 @@ final class MuseConnection {
     }
 
     /// Releases the headband and waits until the helper has exited, so another
-    /// program (the PsychoPy recorder) can connect. Force-quits after a few seconds.
+    /// program (the recording helper) can connect. Force-quits after a few seconds.
     func stopAndWait(timeout: Duration = .seconds(5)) async {
         guard let process else { return }
         process.terminate()

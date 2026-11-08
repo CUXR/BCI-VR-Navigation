@@ -95,17 +95,16 @@ Condensed from `EXPERIMENT_PROCEDURE.md`, matched to what the recorder runs.
 - Part 1, 20 trials: on "Grab left" or "Grab right", imagine grabbing the cup with that hand, then press Space.
 - Part 2, 10 trials: blink once deliberately and press B at the same moment.
 - Before starting: forearms on the table, a cup about 5 cm from each hand, chin slightly raised, head still.
-- In the recording window: press Space to connect to the headband, then Enter to start.
+- After Start Recording the app connects to the headband; Enter (or Start) begins the protocol.
 - Esc stops at any time; data recorded so far is saved.
 
 ### 6.7 Collect EEG data: recording
 
-- Launches `src/pilot_data_collection/psychopy_recording/muse_psychopy_recording_structured.py --name "<full name>" --number <N> [--serial <serial>]` with the repo folder as the working directory, so files land in `<repo>/data/subNN/`. PsychoPy opens its own cue window.
-- The app releases any Muse connection it holds first, because the Muse 2 accepts one Bluetooth connection at a time.
-- The app stops its headband helper and waits for it to exit (force-quitting after 5 s) before launching the recorder, then passes the chosen serial with `--serial`.
-- Shows a recording indicator, elapsed time, and per-part progress parsed from the recorder's output (`Started trial:`, `Ended trial:`, `Blink marker added:`). Runs Python unbuffered so lines arrive live.
-- The recorder prints `Recording saved to <file>` on success and `RECORDING INCOMPLETE: <reason>` on a partial recording; the app treats the second as a failure and shows the reason.
-- Stop Recording interrupts the process (SIGINT). If the recorder exits without writing an `eeg_data_*.csv`, the session is not marked collected and the user can try again.
+- The whole experiment runs in the app window (SwiftUI). No PsychoPy window opens. The protocol matches the former PsychoPy recorder: 10 rounds of Left then Right imagery (spoken instruction, full sentence in round 1 and "Grab left/right" after, read with the macOS `say` voice Samantha at 180 wpm), the trial opens when the instruction ends and closes on Space, a 3 s rest countdown follows each trial, then a spoken blink instruction and the blink block (B marks a blink, Enter finishes early, it ends by itself at 10).
+- Screens: Connecting, Ready (Enter or Start begins), then a cue stage with a recording indicator, elapsed time, the current cue (colored "← LEFT" / "RIGHT →" circle), rest countdown or blink counter, and progress bars for both parts. A "Lost the headband signal" banner shows if samples stop for 3 s; recording continues.
+- **Backend**: `macos_app/backend/muse_session_recorder.py --name "<full name>" --number <N> [--serial <serial>]`, run with the repo folder as the working directory, so files land in `<repo>/data/subNN/`. It owns the BrainFlow connection and uses `src/pilot_data_collection/session_recorder.py` (the recorder class formerly inside the PsychoPy script) to write `eeg_data_*.csv`, `trial_log_*.csv`, `signal_quality_*.jsonl` and `metadata.yaml`. The app sends JSON commands on stdin (`start`, `start_trial`, `end_trial`, `blink`, `stop`), each with `t`, the Unix time of the cue onset or key press; Swift's `Date` and BrainFlow's timestamps share the system clock, so trial times line up with EEG samples. The helper answers with JSON events on stdout (`status`, `recording`, `trial_ended`, `blink`, `saved`, `incomplete`, `error`); progress counts come from these confirmations, not from key presses.
+- The app stops its headband helper and waits for it to exit (force-quitting after 5 s) before launching the recorder, because the Muse 2 accepts one Bluetooth connection at a time.
+- Esc, or Stop and Save (with a confirmation), ends the session and keeps everything recorded so far. The helper also saves if it receives SIGTERM/SIGINT, its stdin closes, or the app quits. `incomplete` (reader or disk failure) shows as a failure with the reason. If no `eeg_data_*.csv` was written, the session is not marked collected and the user can try again.
 
 ### 6.8 Collect EEG data: session saved
 
@@ -133,7 +132,7 @@ The app runs the existing Python code as child processes and reads their output.
 
 | CLI today | App equivalent |
 |---|---|
-| `python .../muse_psychopy_recording_structured.py --name --number --serial` | Collect EEG data |
+| `python .../muse_psychopy_recording_structured.py --name --number --serial` | Collect EEG data (in-app UI plus `macos_app/backend/muse_session_recorder.py`) |
 | `python src/pilot_data_collection/stream_save_muse.py` | Calibration sensor check (`macos_app/backend/muse_signal_check.py`) |
 | `python -m pipeline personalize` / `realtime` | Real-time control, later version |
 
