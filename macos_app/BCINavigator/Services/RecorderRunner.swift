@@ -40,10 +40,12 @@ final class RecorderRunner {
         case failed(String)
     }
 
-    static let rounds = 10
-    static let imageryTarget = rounds * 2
-    static let blinkTarget = 10
-    static let blinkInstruction = "Now we will record intentional blinks. Blink deliberately once, and press B at the same moment. Repeat until the counter reaches ten."
+    var rounds = 10
+    var imageryTarget: Int { rounds * 2 }
+    var blinkTarget = 10
+    var blinkInstruction: String {
+        "Now we will record intentional blinks. Blink deliberately once, and press B at the same moment. Repeat until the counter reaches \(blinkTarget)."
+    }
 
     private(set) var phase: Phase = .idle
     private(set) var connection: HeadbandConnection = .disconnected
@@ -233,7 +235,7 @@ final class RecorderRunner {
     // MARK: - Protocol
 
     private func runProtocol() async {
-        for index in 0..<Self.rounds {
+        for index in 0..<rounds {
             round = index + 1
             for cue in Cue.allCases {
                 phase = .listening(cue)
@@ -247,17 +249,17 @@ final class RecorderRunner {
                 ])
                 phase = .imagining(cue)
                 guard await waitForKey() else { return }
-                let lastTrial = index == Self.rounds - 1 && cue == .right
+                let lastTrial = index == rounds - 1 && cue == .right
                 if !lastTrial, !(await rest()) { return }
             }
         }
         guard await rest() else { return }
 
         phase = .blinkIntro
-        await say(Self.blinkInstruction)
+        await say(blinkInstruction)
         guard !stopping else { return }
         phase = .blinking
-        if blinksDone < Self.blinkTarget {
+        if blinksDone < blinkTarget {
             guard await waitForKey() else { return }
         }
 
@@ -351,7 +353,7 @@ final class RecorderRunner {
             blinksDone += 1
             lastBlinkAt = .now
             notice = nil
-            if blinksDone >= Self.blinkTarget, phase == .blinking { resumeWaiter(true) }
+            if blinksDone >= blinkTarget, phase == .blinking { resumeWaiter(true) }
         case "warning":
             notice = object["message"] as? String
         case "saved":

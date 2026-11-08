@@ -294,7 +294,7 @@ final class AppModel {
         case .calibration: session?.calibrationDone == true ? "All sensors green" : "Fit headband, check sensors"
         case .collect:
             if session?.collectionDone == true { "Saved" }
-            else if recorder.isRunning { "Recording, \(recorder.imageryDone + recorder.blinksDone) of \(RecorderRunner.imageryTarget + RecorderRunner.blinkTarget) trials" }
+            else if recorder.isRunning { "Recording, \(recorder.imageryDone + recorder.blinksDone) of \(recorder.imageryTarget + recorder.blinkTarget) trials" }
             else { "About 5 to 10 minutes" }
         case .realtime:
             if realtime.isRunning { realtime.vrConnected ? "Live · VR app connected" : "Live · VR app not open" }

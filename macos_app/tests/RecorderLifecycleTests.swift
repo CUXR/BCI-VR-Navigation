@@ -61,7 +61,13 @@ import SwiftData
         model.signIn(firstName: "Review", lastName: "Fixture", context: container.mainContext)
         model.resumeSession(context: container.mainContext)
 
-        // Full protocol.
+        precondition(recorder.imageryTarget == 20 && recorder.blinkTarget == 10)
+        recorder.rounds = 3
+        recorder.blinkTarget = 4
+        var instructions: [String] = []
+        recorder.speakOverride = { instructions.append($0) }
+
+        // Full protocol with custom trial counts.
         model.startRecording()
         precondition(recorder.phase == .starting, "Handoff must lock synchronously")
         precondition(!model.canNavigate(to: .signIn), "Navigation must stay locked during handoff")
@@ -72,7 +78,7 @@ import SwiftData
         try await waitUntil("ready") { recorder.phase == .ready }
         recorder.pressSpace() // Ignored before the protocol starts.
         recorder.pressEnter()
-        for trial in 0..<RecorderRunner.imageryTarget {
+        for trial in 0..<recorder.imageryTarget {
             try await waitUntil("imagery trial \(trial + 1)") {
                 if case .imagining = recorder.phase { return recorder.imageryDone == trial }
                 return false
@@ -81,8 +87,8 @@ import SwiftData
             recorder.pressSpace()
         }
         try await waitUntil("blink block") { recorder.phase == .blinking }
-        precondition(recorder.imageryDone == RecorderRunner.imageryTarget, "Every imagery trial must be confirmed")
-        for blink in 0..<RecorderRunner.blinkTarget {
+        precondition(recorder.imageryDone == recorder.imageryTarget, "Every imagery trial must be confirmed")
+        for blink in 0..<recorder.blinkTarget {
             recorder.pressBlink()
             try await waitUntil("blink \(blink + 1)") { recorder.blinksDone == blink + 1 }
         }
@@ -95,15 +101,20 @@ import SwiftData
         let commands = try String(contentsOf: root.appending(path: "commands.jsonl"), encoding: .utf8)
             .split(separator: "\n").map { try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any] }
         let names = commands.map { $0["cmd"] as! String }
-        precondition(names.filter { $0 == "start_trial" }.count == RecorderRunner.imageryTarget)
-        precondition(names.filter { $0 == "end_trial" }.count == RecorderRunner.imageryTarget, "Early Space must not end a trial")
-        precondition(names.filter { $0 == "blink" }.count == RecorderRunner.blinkTarget)
+        precondition(names.filter { $0 == "start_trial" }.count == recorder.imageryTarget)
+        precondition(names.filter { $0 == "end_trial" }.count == recorder.imageryTarget, "Early Space must not end a trial")
+        precondition(names.filter { $0 == "blink" }.count == recorder.blinkTarget)
         let types = commands.compactMap { $0["trial_type"] as? String }
         precondition(types.prefix(2) == ["motor_imagery_left", "motor_imagery_right"], "Trials alternate left, right")
 
+        precondition(types.filter { $0 == "motor_imagery_left" }.count == 3)
+        precondition(types.filter { $0 == "motor_imagery_right" }.count == 3)
+        precondition(instructions.contains(recorder.blinkInstruction))
+        precondition(recorder.blinkInstruction.contains("reaches 4."))
+
         model.recordingEnded(context: container.mainContext)
         precondition(model.session?.collectionDone == true && model.screen == .done)
-        precondition(model.session?.imageryTrials == 20 && model.session?.blinks == 10)
+        precondition(model.session?.imageryTrials == 6 && model.session?.blinks == 4)
         model.signOut()
         precondition(model.participant == nil, "Sign-out should work after recording finishes")
 

@@ -9,15 +9,22 @@ struct CollectIntroView: View {
             ScreenHeader(
                 eyebrow: "Collect EEG data",
                 title: "Here is what you will do",
-                message: "This window guides you with spoken and on-screen cues. Turn your volume up. It takes about 5 to 10 minutes."
+                message: "This window guides you with spoken and on-screen cues. Turn your volume up. Choose how many trials to record in each part."
             )
             HStack(alignment: .top, spacing: 16) {
-                PartCard(part: "Part 1 · 20 trials", title: "Imagine grabbing a cup",
+                PartCard(part: "Part 1 · \(model.recorder.imageryTarget) trials", title: "Imagine grabbing a cup",
                          text: "When you hear \"Grab left\" or \"Grab right\", imagine reaching out and grabbing the cup with that hand. Keep it short and natural, and do not actually move.",
-                         key: "Space", keyHint: "when you finish imagining")
-                PartCard(part: "Part 2 · 10 trials", title: "Blink on purpose",
-                         text: "Blink once, deliberately, and press the key at the same moment. Repeat until the counter reaches 10.",
-                         key: "B", keyHint: "at the same moment you blink")
+                         key: "Space", keyHint: "when you finish imagining",
+                         trials: Binding(get: { Double(model.recorder.imageryTarget) },
+                                         set: { model.recorder.rounds = Int($0) / 2 }),
+                         range: 2...100, step: 2,
+                         trialHint: "\(model.recorder.rounds) trials per hand")
+                PartCard(part: "Part 2 · \(model.recorder.blinkTarget) trials", title: "Blink on purpose",
+                         text: "Blink once, deliberately, and press the key at the same moment. Repeat until the counter reaches \(model.recorder.blinkTarget).",
+                         key: "B", keyHint: "at the same moment you blink",
+                         trials: Binding(get: { Double(model.recorder.blinkTarget) },
+                                         set: { model.recorder.blinkTarget = Int($0) }),
+                         range: 1...50, step: 1, trialHint: "One deliberate blink per trial")
             }
             VStack(alignment: .leading, spacing: 10) {
                 Text("Before you press Start").font(.system(size: 17, weight: .semibold))
@@ -64,12 +71,23 @@ private struct PartCard: View {
     var text: String
     var key: String
     var keyHint: String
+    @Binding var trials: Double
+    var range: ClosedRange<Double>
+    var step: Double
+    var trialHint: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(part).font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
             Text(title).font(.system(size: 20, weight: .bold))
             Text(text).font(.system(size: 15)).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Slider(value: $trials, in: range, step: step) {
+                    Text("Number of trials")
+                }
+                .accessibilityValue("\(Int(trials)) trials")
+                Text(trialHint).font(.system(size: 13)).foregroundStyle(.secondary)
+            }
             Spacer(minLength: 0)
             HStack(spacing: 10) {
                 KeyCap(key: key)
@@ -223,11 +241,11 @@ struct RecordingView: View {
             .card(padding: 24)
         HStack(alignment: .top, spacing: 28) {
             PartProgress(title: "Part 1 · Imagine grabbing", done: recorder.imageryDone,
-                         total: RecorderRunner.imageryTarget, detail: nil,
-                         active: recorder.imageryDone < RecorderRunner.imageryTarget)
+                         total: recorder.imageryTarget, detail: nil,
+                         active: recorder.imageryDone < recorder.imageryTarget)
             PartProgress(title: "Part 2 · Blink on purpose", done: recorder.blinksDone,
-                         total: RecorderRunner.blinkTarget, detail: nil,
-                         active: recorder.imageryDone >= RecorderRunner.imageryTarget)
+                         total: recorder.blinkTarget, detail: nil,
+                         active: recorder.imageryDone >= recorder.imageryTarget)
         }
         .card(padding: 20)
     }
@@ -261,7 +279,7 @@ private struct CueStage: View {
         VStack(spacing: 18) {
             switch recorder.phase {
             case .listening(let cue):
-                listening(title: "Round \(recorder.round) of \(RecorderRunner.rounds) · \(cue.title) hand", color: cue.color)
+                listening(title: "Round \(recorder.round) of \(recorder.rounds) · \(cue.title) hand", color: cue.color)
             case .imagining(let cue):
                 ZStack {
                     Circle().fill(cue.color.opacity(0.1))
@@ -290,7 +308,7 @@ private struct CueStage: View {
             case .blinkIntro:
                 listening(title: "Part 2 · Blink on purpose", color: Palette.adjust)
             case .blinking:
-                Text("\(recorder.blinksDone) of \(RecorderRunner.blinkTarget)")
+                Text("\(recorder.blinksDone) of \(recorder.blinkTarget)")
                     .font(.system(size: 72, weight: .bold)).monospacedDigit()
                     .foregroundStyle(Palette.adjust)
                 TimelineView(.periodic(from: .now, by: 0.1)) { context in
@@ -382,8 +400,8 @@ struct SessionDoneView: View {
                             .font(.system(size: 17)).foregroundStyle(.secondary)
                     }
                     HStack(spacing: 14) {
-                        DoneStat(label: "Imagery trials", value: "\(session.imageryTrials) / \(RecorderRunner.imageryTarget)")
-                        DoneStat(label: "Blinks", value: "\(session.blinks) / \(RecorderRunner.blinkTarget)")
+                        DoneStat(label: "Imagery trials", value: "\(session.imageryTrials) / \(model.recorder.imageryTarget)")
+                        DoneStat(label: "Blinks", value: "\(session.blinks) / \(model.recorder.blinkTarget)")
                         DoneStat(label: "Time", value: session.recordingLength.map(Self.format) ?? "–")
                     }
                     Text("You have now completed \(model.completedSessions(for: participant)) sessions. See you next time.")

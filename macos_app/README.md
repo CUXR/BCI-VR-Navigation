@@ -15,6 +15,8 @@ xcodebuild -project BCINavigator.xcodeproj -scheme BCINavigator -configuration D
 open "build/Build/Products/Debug/BCI Navigator.app"
 ```
 
+Before recording, use the sliders in the two part cards to choose 2–100 imagery trials (equal numbers per hand) and 1–50 blinks. Defaults are 20 imagery trials and 10 blinks.
+
 Behavior and design decisions are in `SPEC.md`.
 
 ## Personal model training
@@ -66,6 +68,6 @@ recording adapter, atomic save, and trained-bundle inference compatibility check
 
 To try the real-time helper without a headband: `.venv/bin/python macos_app/backend/realtime_control.py --mock`.
 
-This uses an in-memory participant database and a fake recording helper to run the full protocol (20 imagery trials, 10 blinks), Esc partway through, and cancel before start, checking startup locking, single launch, timestamps on every command, and session saving without a headband.
+This uses an in-memory participant database and a fake recording helper to run the full protocol with custom counts (6 imagery trials, 4 blinks), after checking the 20/10 defaults, Esc partway through, and cancel before start, checking startup locking, single launch, timestamps on every command, and session saving without a headband.
 
 To try the real helper without a headband: `.venv/bin/python macos_app/backend/muse_session_recorder.py --name test --number 99 --simulate`, then type JSON commands such as `{"cmd": "start"}` (files go to `simulated_data/sub99/`).
