@@ -266,3 +266,8 @@ ml_pipeline/.env
 /releases/environment_1/mac/
 /releases/environment_1/windows/
 /releases/environment_1/source-backup.txt
+
+# Unity 6 generated solution files
+*.slnx
+# Unity Android build temp files
+.utmp/
