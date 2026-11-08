@@ -106,7 +106,9 @@ Served by `eeg_to_meta.websocket_server.JsonWSServer`.
 
 ## Unity Wiring
 
-Scripts added in `unity/environment_1/Assets/scripts/`:
+The following scripts are in the archived Unity source at
+`unity/environment_1/Assets/scripts/`. See the [standalone build guide](../releases/environment_1/README.md)
+for running the packaged environment or restoring source:
 
 - `MarkerWebSocketClient.cs` (collector marker uplink)
 - `PredictionWebSocketClient.cs` (prediction + state downlink)

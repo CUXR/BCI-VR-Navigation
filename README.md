@@ -80,6 +80,12 @@ See [signal-quality setup, thresholds, and validation](eeg_to_meta/signal-qualit
 
 ## Run the Unity Navigation System
 
+Standalone environment-one builds and instructions are in
+[`releases/environment_1/`](releases/environment_1/README.md). The Mac and Windows
+apps support keyboard/mouse navigation without a headset or Unity Editor.
+The Quest APK uses VR tracking. Python inference remains a separate process.
+
+
 With the Muse 2 on and the Quest app running `FreeNavScene`, connect the Quest
 over USB and forward its prediction socket:
 
@@ -98,29 +104,13 @@ uv run python -m pipeline realtime \
   --blink-threshold 0.85
 ```
 
-### Wireless Quest connection
+### Quest connection
 
-1. Put the Mac and Quest on a network where the Quest can reach the Mac. Find
-   the Mac's IP with `ipconfig getifaddr en0` (use the active network interface
-   if `en0` is not connected).
-2. In Unity, open `Assets/Scenes/FreeNavScene.unity` and select the XR Origin's
-   `PredictionWebSocketClient`. Set **Host** to the Mac's IP and leave **Port**
-   at `8765`, then build and install the APK on the Quest. Rebuild if the Mac's
-   IP changes.
-3. Run live inference on the Mac with the WebSocket bound to the network:
-
-   ```bash
-   uv run python -m pipeline realtime \
-     --model ml_pipeline/models/realtime_models.pkl \
-     --skip-personalize --serial 15C3 \
-     --mi-threshold 0.70 --blink-threshold 0.85 \
-     --ws-host 0.0.0.0
-   ```
-
-   `0.0.0.0` is the server's bind address, not the address to enter in Unity.
-   Allow inbound Python connections through the Mac firewall if prompted. The
-   prediction socket is unencrypted and unauthenticated, so use a trusted
-   network.
+The packaged APK connects to `127.0.0.1:8765`. Use the USB `adb reverse`
+command above to reach the prediction server on your computer. This APK does
+not have a runtime Wi-Fi host selector. A direct LAN connection requires
+restoring the archived Unity source, changing the prediction host, and rebuilding.
+The desktop apps connect to the prediction server on the same computer.
 
 `--serial` accepts either `15C3` or `Muse-15C3`. An explicit `--model` needs no
 `--participant`. The included model is a legacy two-class bundle for left/right
@@ -177,7 +167,7 @@ Desktop feedback workflow (accuracy figures refer to the historical offline eval
 pipeline/                              # Collection, training, personalization, realtime CLI
 ml_pipeline/                           # Models and feature pipeline used by Quest inference
 eeg_to_meta/                           # Muse acquisition and prediction WebSocket server
-unity/environment_1/                   # Indoor Quest navigation and collection scenes
+releases/environment_1/                # Standalone Mac, Windows, and Quest builds
 
 all_ml_models/
   training/                             # Offline ML training pipelines
@@ -297,7 +287,7 @@ confidence scores, and pipeline state events.
 
 [`JsonWSServer`](eeg_to_meta/websocket_server.py) broadcasts one UTF-8 JSON
 message per WebSocket frame to connected clients. Unity's
-[`PredictionWebSocketClient`](unity/environment_1/Assets/Scripts/PredictionWebSocketClient.cs)
+`PredictionWebSocketClient`
 connects to `ws://<host>:8765` and passes predictions to `FreeNavController`.
 With automatic connection enabled, it retries disconnected connections every
 2 seconds. See [Run the Unity Navigation System](#run-the-unity-navigation-system)
@@ -330,7 +320,7 @@ After configuring the Quest connection, run the synthetic prediction server
 from the repository root:
 
 ```bash
-uv run python unity/environment_1/tools/smoke_predictions.py
+uv run python tools/smoke_predictions.py
 # For Wi-Fi, add: --host 0.0.0.0
 ```
 

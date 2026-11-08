@@ -1,3 +1,7 @@
+> The Unity source is archived outside the repository. For the prebuilt APK,
+> use the [standalone build guide](../releases/environment_1/README.md) and USB forwarding.
+> The source-editing instructions below require restoring that archive.
+
 # Running the BCI Realtime Pipeline on Meta Quest
 
 This doc explains how to run the `FreeNavScene` (and the AutoMove data-collection
@@ -190,7 +194,7 @@ Quest.
 5. By default the Python prediction server binds to `127.0.0.1`, which is
    unreachable from the LAN. For FreeNavScene, start it with
    `--ws-host 0.0.0.0`; keep the Unity Host field set to the Mac's actual IP.
-   See the [indoor Quest guide](../unity/environment_1/README.md) for the
+   See the [indoor Quest guide](../releases/environment_1/README.md) for the
    complete live and synthetic test commands.
 
 ### Run

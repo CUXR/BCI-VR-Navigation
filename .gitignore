@@ -257,3 +257,8 @@ ml_pipeline/.env
 **/*.mdb
 **/.vs/
 **/.idea/
+
+# Local unpacked release builds and source-backup location
+/releases/environment_1/mac/
+/releases/environment_1/windows/
+/releases/environment_1/source-backup.txt
