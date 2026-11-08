@@ -52,6 +52,8 @@ final class SessionRecord {
     var number: Int
     var startedAt: Date
     var calibrationDone: Bool = false
+    /// Calibration was passed with the debug Skip Check button, not with four green sensors.
+    var sensorCheckSkipped: Bool = false
     var collectionDone: Bool = false
     var recordingStartedAt: Date?
     var recordingEndedAt: Date?

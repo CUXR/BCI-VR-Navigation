@@ -1,6 +1,6 @@
 # BCI Navigator (macOS)
 
-A native app that guides a participant through one session: sign in, fit the Muse 2 headband with live per-sensor signal quality, then record the EEG session with in-app cues (no PsychoPy window). Press ⇧⌘A for the admin view (participants, session log, settings).
+A native app that guides a participant through one session: sign in, fit the Muse 2 headband with live per-sensor signal quality, record the EEG session with in-app cues (no PsychoPy window), and try real-time control with the group model. Press ⇧⌘A for the admin view (participants, session log, settings).
 
 ## Requirements
 
@@ -17,7 +17,7 @@ open "build/Build/Products/Debug/BCI Navigator.app"
 
 Behavior and design decisions are in `SPEC.md`.
 
-## Recorder lifecycle regression check
+## Regression checks
 
 From the repo root, with Xcode selected:
 
@@ -27,6 +27,10 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor \
   macos_app/tests/RecorderLifecycleTests.swift -o /tmp/BCIRecorderLifecycleTests
 /tmp/BCIRecorderLifecycleTests
 ```
+
+Real-time control has the same kind of check: compile `macos_app/tests/RealtimeRunnerTests.swift` the same way and run it. It uses a fake `realtime_control.py` to check the optional sensor check, navigation lock, prediction handling, the action log, live sensitivity changes, and stop.
+
+To try the real-time helper without a headband: `.venv/bin/python macos_app/backend/realtime_control.py --mock`.
 
 This uses an in-memory participant database and a fake recording helper to run the full protocol (20 imagery trials, 10 blinks), Esc partway through, and cancel before start, checking startup locking, single launch, timestamps on every command, and session saving without a headband.
 

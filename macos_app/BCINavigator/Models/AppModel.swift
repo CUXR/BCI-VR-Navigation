@@ -6,6 +6,7 @@ enum AppMode { case user, admin }
 
 enum UserScreen: Equatable {
     case signIn, firstTime, home, calibrationIntro, calibration, collectIntro, recording, done
+    case realtimeIntro, realtimeLive
 }
 
 /// Steps shown in the user-mode sidebar timeline.
@@ -22,7 +23,7 @@ enum UserStep: CaseIterable, Identifiable {
         }
     }
 
-    var comingSoon: Bool { self == .realtime }
+    var comingSoon: Bool { false }
 }
 
 enum StepState { case done, current, todo, soon }
@@ -37,6 +38,14 @@ final class AppModel {
     let settings = AppSettings()
     let headband = MuseConnection()
     let recorder = RecorderRunner()
+    let realtime = RealtimeRunner()
+    /// Sensors were checked during this sign-in. Real-time control recommends it but can skip it.
+    private(set) var calibratedThisVisit = false
+    /// Where passing the sensor check leads: data collection, or back to real-time control.
+    private(set) var calibrationReturnsTo: UserScreen = .collectIntro
+
+    /// A recording or real-time session holds the headband; navigation and sign-out wait.
+    var isBusy: Bool { recorder.isRunning || realtime.isRunning }
 
     var dataFolder: DataFolder { DataFolder(root: settings.dataURL) }
 
@@ -70,11 +79,14 @@ final class AppModel {
     }
 
     func signOut() {
-        guard !recorder.isRunning else { return }
+        guard !isBusy else { return }
         headband.stop()
         participant = nil
         session = nil
         recorder.reset()
+        realtime.reset()
+        calibratedThisVisit = false
+        calibrationReturnsTo = .collectIntro
         screen = .signIn
     }
 
@@ -99,6 +111,7 @@ final class AppModel {
             return record
         }()
         session = current
+        calibrationReturnsTo = .collectIntro
         screen = current.calibrationDone ? .collectIntro : .calibrationIntro
     }
 
@@ -128,9 +141,60 @@ final class AppModel {
     }
 
     func finishCalibration(context: ModelContext) {
+        calibratedThisVisit = true
+        if calibrationReturnsTo == .realtimeIntro {
+            screen = .realtimeIntro
+            return
+        }
         session?.calibrationDone = true
         try? context.save()
         screen = .collectIntro
+    }
+
+    /// Debug: leave the sensor check without four green sensors. A recording session
+    /// remembers that its check was skipped; real-time control still reads "Not checked".
+    func skipCalibration(context: ModelContext) {
+        if calibrationReturnsTo == .realtimeIntro {
+            screen = .realtimeIntro
+            return
+        }
+        session?.calibrationDone = true
+        session?.sensorCheckSkipped = true
+        try? context.save()
+        screen = .collectIntro
+    }
+
+    // MARK: - Real-time control
+
+    func openRealtime() {
+        guard participant != nil, !isBusy else { return }
+        realtime.reset()
+        screen = .realtimeIntro
+    }
+
+    /// Sensor check on the way to real-time control; passing it comes back here.
+    func checkSensorsForRealtime() {
+        calibrationReturnsTo = .realtimeIntro
+        screen = .calibrationIntro
+    }
+
+    func startRealtime() {
+        guard participant != nil, !isBusy else { return }
+        screen = .realtimeLive
+        realtime.start(settings: settings, headband: headband)
+    }
+
+    /// The live screen goes back to the intro once the helper has released the headband.
+    func realtimeEnded() {
+        guard screen == .realtimeLive, realtime.phase == .stopped else { return }
+        realtime.reset()
+        screen = .realtimeIntro
+    }
+
+    func setThresholds(mi: Double, blink: Double) {
+        settings.miThreshold = mi
+        settings.blinkThreshold = blink
+        realtime.setThresholds(mi: mi, blink: blink)
     }
 
     func startRecording() {
@@ -162,11 +226,10 @@ final class AppModel {
 
     /// Whether clicking this step in the sidebar can jump to it.
     func canNavigate(to step: UserStep) -> Bool {
-        guard participant != nil, screen != .firstTime, !recorder.isRunning else { return false }
+        guard participant != nil, screen != .firstTime, !isBusy else { return false }
         switch step {
-        case .signIn, .calibration: return true
+        case .signIn, .calibration, .realtime: return true
         case .collect: return session?.calibrationDone == true && session?.collectionDone == false
-        case .realtime: return false
         }
     }
 
@@ -179,11 +242,12 @@ final class AppModel {
         case .calibration:
             if session == nil { resumeSession(context: context) }
             headband.stop()
+            calibrationReturnsTo = .collectIntro
             screen = .calibrationIntro
         case .collect:
             screen = .collectIntro
         case .realtime:
-            break
+            openRealtime()
         }
     }
 
@@ -193,18 +257,19 @@ final class AppModel {
             .signIn: .signIn, .firstTime: .signIn, .home: .calibration,
             .calibrationIntro: .calibration, .calibration: .calibration,
             .collectIntro: .collect, .recording: .collect, .done: .collect,
+            .realtimeIntro: .realtime, .realtimeLive: .realtime,
         ]
         let current = order[screen] ?? .signIn
         if screen == .done && step == .collect { return .done }
         switch step {
         case .signIn: return participant == nil || screen == .firstTime ? .current : .done
         case .calibration:
-            if session?.calibrationDone == true { return .done }
-            return current == .calibration ? .current : .todo
+            if current == .calibration { return .current }
+            return session?.calibrationDone == true || calibratedThisVisit ? .done : .todo
         case .collect:
             if session?.collectionDone == true { return .done }
             return current == .collect ? .current : .todo
-        case .realtime: return .soon
+        case .realtime: return current == .realtime ? .current : .todo
         }
     }
 
@@ -216,7 +281,9 @@ final class AppModel {
             if session?.collectionDone == true { "Saved" }
             else if recorder.isRunning { "Recording, \(recorder.imageryDone + recorder.blinksDone) of \(RecorderRunner.imageryTarget + RecorderRunner.blinkTarget) trials" }
             else { "About 5 to 10 minutes" }
-        case .realtime: "Coming soon"
+        case .realtime:
+            if realtime.isRunning { realtime.vrConnected ? "Live · VR app connected" : "Live · VR app not open" }
+            else { "Turn and select with your mind" }
         }
     }
 }

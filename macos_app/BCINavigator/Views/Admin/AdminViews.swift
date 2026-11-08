@@ -163,9 +163,17 @@ struct AdminSessionLogView: View {
             TableColumn("Session") { Text("\($0.number)").monospacedDigit() }.width(60)
             TableColumn("Started") { Text($0.startedAt.formatted(date: .abbreviated, time: .shortened)) }.width(150)
             TableColumn("Status") { s in
-                Text(s.collectionDone ? "Recorded" : s.calibrationDone ? "Calibrated" : "Started")
+                HStack(spacing: 4) {
+                    Text(s.collectionDone ? "Recorded" : s.calibrationDone ? "Calibrated" : "Started")
+                    if s.sensorCheckSkipped {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Palette.adjust)
+                            .help("Sensor check skipped")
+                            .accessibilityLabel("Sensor check skipped")
+                    }
+                }
             }
-            .width(90)
+            .width(110)
             TableColumn("Headband") { s in
                 Text(s.headband.map(AppSettings.shortCode) ?? "–").monospaced()
             }

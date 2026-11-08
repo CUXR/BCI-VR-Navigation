@@ -394,6 +394,10 @@ struct SessionDoneView: View {
             } leading: {
                 Button("Sign Out") { model.signOut() }
             } trailing: {
+                Button("Try Real-time Control") {
+                    model.finishVisit()
+                    model.openRealtime()
+                }
                 Button("Done") { model.finishVisit() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
