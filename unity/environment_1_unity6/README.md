@@ -32,7 +32,7 @@ until another accepted command arrives. Blink predictions are not rate-limited.
    from the repository root run:
 
    ```sh
-   .venv/bin/python unity/environment_1/tools/smoke_predictions.py
+   .venv/bin/python tools/smoke_predictions.py
    ```
 
    Enter one direction at a time; each command sends five frames over half a
@@ -63,7 +63,7 @@ until another accepted command arrives. Blink predictions are not rate-limited.
    server and run:
 
    ```sh
-   uv run python unity/environment_1/tools/smoke_predictions.py --host 0.0.0.0
+   uv run python tools/smoke_predictions.py --host 0.0.0.0
    ```
 
    Launch the app and wait for `Quest connected` before entering a direction.

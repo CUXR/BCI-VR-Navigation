@@ -1,7 +1,0 @@
-[
-{
-  "directory": "/Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/.utmp/Debug/2j1x6dn2/arm64-v8a",
-  "command": "/Applications/Unity/Hub/Editor/6000.6.8f1/PlaybackEngines/AndroidPlayer/NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++ --target=aarch64-none-linux-android29 --sysroot=/Applications/Unity/Hub/Editor/6000.6.8f1/PlaybackEngines/AndroidPlayer/NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DEXTERNAL_FRAME_PACING_CODE -Dswappywrapper_EXPORTS -I/Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/FramePacing -isystem /Users/alanwu/.gradle/caches/9.3.1/transforms/04b2a8205568aa58e03e4e5754698a1b/transformed/jetified-games-frame-pacing-2.1.2/prefab/modules/swappy_static/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D__BIONIC_NO_PAGE_SIZE_MACRO -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -Wall -Wextra -pedantic -Werror -fno-limit-debug-info  -fPIC -o FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o -c /Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/FramePacing/UnitySwappyWrapper.cpp",
-  "file": "/Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/FramePacing/UnitySwappyWrapper.cpp"
-}
-]

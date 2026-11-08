@@ -1,5 +1,0 @@
-/Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/.utmp/Debug/2j1x6dn2/arm64-v8a/CMakeFiles/edit_cache.dir
-/Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/.utmp/Debug/2j1x6dn2/arm64-v8a/CMakeFiles/rebuild_cache.dir
-/Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/.utmp/Debug/2j1x6dn2/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
-/Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/.utmp/Debug/2j1x6dn2/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
-/Users/alanwu/Documents/Working/BCI-VR-Navigation/unity/environment_1/.utmp/Debug/2j1x6dn2/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir

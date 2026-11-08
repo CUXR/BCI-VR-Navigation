@@ -265,3 +265,5 @@ ml_pipeline/.env
 
 # Unity 6 generated solution files
 *.slnx
+# Unity Android build temp files
+.utmp/
