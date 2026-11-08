@@ -20,6 +20,8 @@ struct UserRootView: View {
                 case .collectIntro: CollectIntroView()
                 case .recording: RecordingView()
                 case .done: SessionDoneView()
+                case .realtimeIntro: RealtimeIntroView()
+                case .realtimeLive: RealtimeLiveView()
                 }
             }
             .font(.system(size: 15))
@@ -70,12 +72,13 @@ struct StepTimeline: View {
                     Text(participant.firstName).fontWeight(.semibold).lineLimit(1)
                     Spacer(minLength: 8)
                     Button("Sign Out") { model.signOut() }
-                        .disabled(model.recorder.isRunning)
+                        .disabled(model.isBusy)
                 }
                 if let serial = model.headband.serial ?? model.session?.headband {
                     Divider()
                     HeadbandStatusLine(code: AppSettings.shortCode(serial),
-                                       connection: model.recorder.isRunning ? model.recorder.connection : model.headband.connection)
+                                       connection: model.recorder.isRunning ? model.recorder.connection
+                                           : model.realtime.isRunning ? model.realtime.connection : model.headband.connection)
                 }
             }
             .padding(12)

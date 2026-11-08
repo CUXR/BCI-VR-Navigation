@@ -206,12 +206,16 @@ struct CalibrationView: View {
                         model.headband.stop()
                         model.screen = .calibrationIntro
                     }
+                    Button("Skip Check") { model.skipCalibration(context: context) }
+                        .help("For debugging: continue without all four sensors green. Recordings are flagged in the Session Log.")
                 } trailing: {
                     if !headband.allGood {
                         Text(headband.connection.isLive ? "All four sensors must be green" : "Waiting for the headband")
                             .font(.system(size: 14)).foregroundStyle(.secondary)
                     }
-                    Button("Start Collecting EEG Data") { model.finishCalibration(context: context) }
+                    Button(model.calibrationReturnsTo == .realtimeIntro ? "Continue to Real-time Control" : "Start Collecting EEG Data") {
+                        model.finishCalibration(context: context)
+                    }
                         .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
                         .disabled(!headband.allGood)

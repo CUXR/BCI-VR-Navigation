@@ -16,6 +16,14 @@ final class AppSettings {
     var museSerial: String {
         didSet { defaults.set(museSerial, forKey: "museSerial") }
     }
+    /// Confidence (0 to 1) a left or right prediction needs before it is sent to the VR app.
+    var miThreshold: Double {
+        didSet { defaults.set(miThreshold, forKey: "miThreshold") }
+    }
+    /// Confidence (0 to 1) an intentional blink needs before it is sent to the VR app.
+    var blinkThreshold: Double {
+        didSet { defaults.set(blinkThreshold, forKey: "blinkThreshold") }
+    }
 
     init() {
         let repo = defaults.string(forKey: "repoPath") ?? Self.detectedRepoPath
@@ -23,6 +31,9 @@ final class AppSettings {
         pythonPath = defaults.string(forKey: "pythonPath")
             ?? URL(fileURLWithPath: repo).appending(path: ".venv/bin/python").path
         museSerial = defaults.string(forKey: "museSerial") ?? ""
+        // Defaults match eeg_to_meta/config.py.
+        miThreshold = defaults.object(forKey: "miThreshold") as? Double ?? 0.55
+        blinkThreshold = defaults.object(forKey: "blinkThreshold") as? Double ?? 0.60
     }
 
     /// The lab's two headbands. Their Bluetooth names match the recorder's device list.
@@ -38,6 +49,9 @@ final class AppSettings {
     }
     var recorderScriptURL: URL {
         repoURL.appending(path: "macos_app/backend/muse_session_recorder.py")
+    }
+    var realtimeScriptURL: URL {
+        repoURL.appending(path: "macos_app/backend/realtime_control.py")
     }
 
     /// Development default: the repo checkout this source file was compiled from

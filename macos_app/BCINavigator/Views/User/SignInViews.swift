@@ -222,6 +222,7 @@ struct HomeView: View {
                 Button("Back") { model.signOut() }
                     .help("Sign out and go back to sign in")
             } trailing: {
+                Button("Real-time Control") { model.openRealtime() }
                 Button(open?.calibrationDone == true ? "Continue to Recording" : "Start Calibration") {
                     model.resumeSession(context: context)
                 }
