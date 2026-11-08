@@ -19,6 +19,16 @@ Before recording, use the sliders in the two part cards to choose 2–100 imager
 
 Behavior and design decisions are in `SPEC.md`.
 
+In **Real-time control → Live control**, click **Open VR environment** to launch
+BCI Indoor on this Mac. The button uses an installed copy in Applications, or mounts
+`releases/environment_1/BCIIndoor-mac.dmg` and launches the app directly from it.
+Keep real-time control running: the environment connects automatically to its
+prediction server, and the VR status turns green once connected. Opening the
+environment does not start a second inference session or change the selected model.
+The packaged environment turns for stable left/right predictions at 55% confidence
+or higher, even if Navigator's sensitivity is set lower. Blink selection is not yet
+mapped to an action in this environment.
+
 ## Personal model training
 
 On **Real-time control → Get ready**, choose **Train Your Model**. Training runs locally

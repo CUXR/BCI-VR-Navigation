@@ -251,6 +251,7 @@ struct RealtimeLiveView: View {
 
 private struct LivePanel: View {
     @Environment(AppModel.self) private var model
+    @State private var environment = VREnvironmentLauncher()
     var runner: RealtimeRunner
     var settings: AppSettings
 
@@ -272,6 +273,27 @@ private struct LivePanel: View {
             Label(problem, systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Palette.adjust)
+        }
+        HStack(spacing: 12) {
+            Button {
+                Task { await environment.open(settings: settings) }
+            } label: {
+                Label(environment.isOpening ? "Opening…" : "Open VR environment", systemImage: "visionpro")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(environment.isOpening)
+            if environment.isOpening {
+                ProgressView().controlSize(.small)
+            }
+            Text(runner.vrConnected
+                 ? "Connected. Left/right predictions turn the view."
+                 : "Opens on this Mac and connects to your live model.")
+                .font(.system(size: 13)).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        if let problem = environment.problem {
+            Label(problem, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 14)).foregroundStyle(Palette.adjust)
         }
         TimelineView(.periodic(from: .now, by: 0.1)) { context in
             RecognitionCard(runner: runner, settings: settings, now: context.date)
