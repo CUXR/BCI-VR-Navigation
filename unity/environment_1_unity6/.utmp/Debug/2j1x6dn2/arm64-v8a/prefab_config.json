@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "prefabPath": "/Users/alanwu/.gradle/caches/modules-2/files-2.1/com.google.prefab/cli/2.1.0/aa32fec809c44fa531f01dcfb739b5b3304d3050/cli-2.1.0-all.jar",
+  "packages": [
+    "/Users/alanwu/.gradle/caches/9.3.1/transforms/4ef844a6bd74f0e9cd28a860be6bd5ae/transformed/jetified-openxr_loader/prefab",
+    "/Users/alanwu/.gradle/caches/9.3.1/transforms/04b2a8205568aa58e03e4e5754698a1b/transformed/jetified-games-frame-pacing-2.1.2/prefab"
+  ]
+}

@@ -38,7 +38,7 @@ public static class BCIIndoorBuild
         var xr = UnityEditor.XR.Management.XRGeneralSettingsPerBuildTarget.XRGeneralSettingsForBuildTarget(BuildTargetGroup.Standalone);
         string xrAssetPath = xr != null ? AssetDatabase.GetAssetPath(xr) : null;
         byte[] xrAssetBytes = xrAssetPath != null ? File.ReadAllBytes(xrAssetPath) : null;
-        var manager = xr != null ? xr.Manager : null;
+        var manager = xr != null ? xr.AssignedSettings : null;
         var loaders = manager != null ? new System.Collections.Generic.List<UnityEngine.XR.Management.XRLoader>(manager.activeLoaders) : new System.Collections.Generic.List<UnityEngine.XR.Management.XRLoader>();
         if (xr != null) xr.InitManagerOnStart = false;
         foreach (var l in loaders) manager.TryRemoveLoader(l);

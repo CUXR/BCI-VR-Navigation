@@ -9,7 +9,7 @@ public class DemoFree : MonoBehaviour
 
     private void Start()
     {
-        m_animators = FindObjectsByType<Animator>();
+        m_animators = FindObjectsOfType<Animator>();
     }
 
     private void Update()

@@ -15,7 +15,7 @@ namespace BCI
                 return;
             }
 
-            if (Object.FindAnyObjectByType<BCICommandClient>() != null)
+            if (Object.FindObjectOfType<BCICommandClient>() != null)
             {
                 return;
             }
