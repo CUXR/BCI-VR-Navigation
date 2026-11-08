@@ -137,7 +137,7 @@ public static class RelaxedMarketBuilder
         {
             var m = CopyMat(kitNeon, "KitNeonSoft");
             m.SetColor("_Color", new Color(1f, 0.86f, 0.66f));
-            m.SetColor("_EmissionColor", new Color(0.75f, 0.58f, 0.40f));
+            m.SetColor("_EmissionColor", new Color(0.42f, 0.32f, 0.22f));
         }
     }
 
@@ -245,10 +245,20 @@ public static class RelaxedMarketBuilder
         foreach (var mb in level.GetComponentsInChildren<MonoBehaviour>(true))
             if (mb != null && mb.GetType().Name == "Turn_Move") mb.enabled = false;
 
-        // The stray grab cube near the spawn becomes a wooden produce crate in look only.
         foreach (var go in level.scene.GetRootGameObjects())
+        {
+            // The 1 m XR grab test cube sits in the middle of the view from the spawn and hides
+            // the produce island. No script references it, so it is only deactivated.
             if (go.name == "Cube" && go.GetComponent<MeshRenderer>() != null)
-                go.GetComponent<MeshRenderer>().sharedMaterial = mats["CrateWood"];
+                go.SetActive(false);
+
+            // The original black metal shelves get the oak finish of the new furniture. Only the
+            // material changes; the shelves and their named food items stay where they are.
+            if (go.name == "shelf")
+                foreach (var r in go.GetComponentsInChildren<MeshRenderer>(true))
+                    if (r.sharedMaterial != null && r.sharedMaterial.name == "shelf")
+                        r.sharedMaterial = mats["Oak"];
+        }
     }
 
     static void SetUpLighting()
