@@ -113,7 +113,7 @@ public class AutoMoveDataCollectionController : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void BootstrapOnSceneLoad()
     {
-        if (FindObjectOfType<AutoMoveDataCollectionController>() != null)
+        if (FindAnyObjectByType<AutoMoveDataCollectionController>() != null)
         {
             return;
         }
@@ -257,7 +257,7 @@ public class AutoMoveDataCollectionController : MonoBehaviour
 
     private void ResolveSceneReferences()
     {
-        XROrigin xrOrigin = FindObjectOfType<XROrigin>();
+        XROrigin xrOrigin = FindAnyObjectByType<XROrigin>();
         if (xrOrigin != null)
         {
             if (xrRigRoot == null)
@@ -273,7 +273,7 @@ public class AutoMoveDataCollectionController : MonoBehaviour
 
         if (hmdCamera == null)
         {
-            hmdCamera = Camera.main != null ? Camera.main : FindObjectOfType<Camera>();
+            hmdCamera = Camera.main != null ? Camera.main : FindAnyObjectByType<Camera>();
         }
 
         if (xrRigRoot == null && hmdCamera != null)
@@ -323,7 +323,7 @@ public class AutoMoveDataCollectionController : MonoBehaviour
         TextMeshPro generatedText = textObject.AddComponent<TextMeshPro>();
         generatedText.alignment = TextAlignmentOptions.Center;
         generatedText.color = Color.white;
-        generatedText.enableWordWrapping = false;
+        generatedText.textWrappingMode = TextWrappingModes.NoWrap;
         generatedText.fontSize = instructionTextSize;
         generatedText.rectTransform.sizeDelta = new Vector2(5f, 1f);
         generatedText.text = string.Empty;

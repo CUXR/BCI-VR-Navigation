@@ -46,7 +46,7 @@ namespace BCI
         {
             if (xrOrigin == null)
             {
-                var origin = FindObjectOfType<Unity.XR.CoreUtils.XROrigin>();
+                var origin = FindAnyObjectByType<Unity.XR.CoreUtils.XROrigin>();
                 if (origin != null)
                 {
                     xrOrigin = origin.transform;

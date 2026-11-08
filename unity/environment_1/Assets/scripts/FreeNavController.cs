@@ -81,7 +81,7 @@ public class FreeNavController : MonoBehaviour
 
     private void Update()
     {
-        if (disableWhenLegacyBCIClientPresent && FindObjectOfType<BCI.BCICommandClient>() != null)
+        if (disableWhenLegacyBCIClientPresent && FindAnyObjectByType<BCI.BCICommandClient>() != null)
         {
             return;
         }

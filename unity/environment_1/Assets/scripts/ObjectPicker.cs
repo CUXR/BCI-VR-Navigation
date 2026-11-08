@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 public class ObjectPicker : MonoBehaviour
 {
@@ -25,7 +26,7 @@ public class ObjectPicker : MonoBehaviour
     {
         
         grabInteractable = GetComponent<XRGrabInteractable>();
-        grabInteractable.onSelectEntered.AddListener(CheckObject);
+        grabInteractable.selectEntered.AddListener(CheckObject);
         audioSource = GetComponents<AudioSource>();
         originalPosition = transform.position;
         
@@ -95,12 +96,12 @@ public class ObjectPicker : MonoBehaviour
         }
     }
 
-    private void CheckObject(XRBaseInteractor interactor)
+    private void CheckObject(SelectEnterEventArgs args)
     {
         LoadCounter();
         SetExpectedObject();
         Debug.Log("Counter: " + counter);
-        GameObject selectedObject = interactor.selectTarget.gameObject;
+        GameObject selectedObject = args.interactableObject.transform.gameObject;
         Debug.Log("Object picked: " + selectedObject.name);
         Debug.Log("Object expected: " + expectedObject.name);
         if (selectedObject.name == expectedObject.name)

@@ -280,7 +280,7 @@ public static class RelaxedMarketBuilder
         RenderSettings.ambientGroundColor = new Color(0.33f, 0.28f, 0.23f);
         // The default sky reflection tints the ceiling blue; indoors there is no sky to reflect.
         RenderSettings.defaultReflectionMode = UnityEngine.Rendering.DefaultReflectionMode.Custom;
-        RenderSettings.customReflection = null;
+        RenderSettings.customReflectionTexture = null;
         RenderSettings.reflectionIntensity = 0.3f;
         RenderSettings.fog = false;
 
@@ -612,7 +612,7 @@ public static class RelaxedMarketBuilder
             tmp.color = new Color(0.97f, 0.93f, 0.84f);
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.rectTransform.sizeDelta = new Vector2(1.4f, 0.32f);
-            tmp.enableWordWrapping = false;
+            tmp.textWrappingMode = TextWrappingModes.NoWrap;
         }
     }
 
@@ -631,7 +631,7 @@ public static class RelaxedMarketBuilder
         tmp.color = new Color(0.95f, 0.94f, 0.88f);
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.rectTransform.sizeDelta = new Vector2(1.15f, 0.6f);
-        tmp.enableWordWrapping = false;
+        tmp.textWrappingMode = TextWrappingModes.NoWrap;
     }
 
     static void PottedPlant(Transform parent, Vector3 pos, float height)

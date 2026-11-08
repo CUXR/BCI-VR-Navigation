@@ -44,7 +44,7 @@ public static class SceneCapture
             // The top-down view must see through the roof.
             var hidden = new System.Collections.Generic.List<Renderer>();
             if (v.ortho)
-                foreach (var r in Object.FindObjectsOfType<Renderer>())
+                foreach (var r in Object.FindObjectsByType<Renderer>())
                     if (r.enabled && r.bounds.min.y > 2.9f) { r.enabled = false; hidden.Add(r); }
 
             cam.orthographic = v.ortho; cam.orthographicSize = v.size;

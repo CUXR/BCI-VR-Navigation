@@ -1,117 +1,366 @@
 fileFormatVersion: 2
 guid: fe9ba93f508bf1849bce40f4ae043ed2
-timeCreated: 1471538076
-licenseType: Store
 ModelImporter:
-  serializedVersion: 19
-  fileIDToRecycleName:
-    100000: Circle
-    100002: Circle.001
-    100004: Circle.002
-    100006: Circle.003
-    100008: Cube
-    100010: Cube.001
-    100012: Cube.002
-    100014: Cube.003
-    100016: Cylinder
-    100018: Cylinder.001
-    100020: Cylinder.002
-    100022: Plane.004
-    100024: Plane.005
-    100026: Sphere
-    100028: Sphere.001
-    100030: Sphere.002
-    100032: Sphere.003
-    100034: //RootNode
-    400000: Circle
-    400002: Circle.001
-    400004: Circle.002
-    400006: Circle.003
-    400008: Cube
-    400010: Cube.001
-    400012: Cube.002
-    400014: Cube.003
-    400016: Cylinder
-    400018: Cylinder.001
-    400020: Cylinder.002
-    400022: Plane.004
-    400024: Plane.005
-    400026: Sphere
-    400028: Sphere.001
-    400030: Sphere.002
-    400032: Sphere.003
-    400034: //RootNode
-    2300000: Circle
-    2300002: Circle.001
-    2300004: Circle.002
-    2300006: Circle.003
-    2300008: Cube
-    2300010: Cube.001
-    2300012: Cube.002
-    2300014: Cube.003
-    2300016: Cylinder
-    2300018: Cylinder.001
-    2300020: Cylinder.002
-    2300022: Plane.004
-    2300024: Plane.005
-    2300026: Sphere
-    2300028: Sphere.001
-    2300030: Sphere.002
-    2300032: Sphere.003
-    3300000: Circle
-    3300002: Circle.001
-    3300004: Circle.002
-    3300006: Circle.003
-    3300008: Cube
-    3300010: Cube.001
-    3300012: Cube.002
-    3300014: Cube.003
-    3300016: Cylinder
-    3300018: Cylinder.001
-    3300020: Cylinder.002
-    3300022: Plane.004
-    3300024: Plane.005
-    3300026: Sphere
-    3300028: Sphere.001
-    3300030: Sphere.002
-    3300032: Sphere.003
-    4300000: Cube.003
-    4300002: Cube.001
-    4300004: Plane.005
-    4300006: Plane.004
-    4300008: Circle.003
-    4300010: Sphere.003
-    4300012: Sphere.002
-    4300014: Sphere.001
-    4300016: Sphere
-    4300018: Circle.002
-    4300020: Circle.001
-    4300022: Cube
-    4300024: Circle
-    4300026: Cylinder.001
-    4300028: Cylinder.002
-    4300030: Cylinder
-    4300032: Cube.002
+  serializedVersion: 24600
+  internalIDToNameTable:
+  - first:
+      1: 100000
+    second: Circle
+  - first:
+      1: 100002
+    second: Circle.001
+  - first:
+      1: 100004
+    second: Circle.002
+  - first:
+      1: 100006
+    second: Circle.003
+  - first:
+      1: 100008
+    second: Cube
+  - first:
+      1: 100010
+    second: Cube.001
+  - first:
+      1: 100012
+    second: Cube.002
+  - first:
+      1: 100014
+    second: Cube.003
+  - first:
+      1: 100016
+    second: Cylinder
+  - first:
+      1: 100018
+    second: Cylinder.001
+  - first:
+      1: 100020
+    second: Cylinder.002
+  - first:
+      1: 100022
+    second: Plane.004
+  - first:
+      1: 100024
+    second: Plane.005
+  - first:
+      1: 100026
+    second: Sphere
+  - first:
+      1: 100028
+    second: Sphere.001
+  - first:
+      1: 100030
+    second: Sphere.002
+  - first:
+      1: 100032
+    second: Sphere.003
+  - first:
+      1: 100034
+    second: //RootNode
+  - first:
+      4: 400000
+    second: Circle
+  - first:
+      4: 400002
+    second: Circle.001
+  - first:
+      4: 400004
+    second: Circle.002
+  - first:
+      4: 400006
+    second: Circle.003
+  - first:
+      4: 400008
+    second: Cube
+  - first:
+      4: 400010
+    second: Cube.001
+  - first:
+      4: 400012
+    second: Cube.002
+  - first:
+      4: 400014
+    second: Cube.003
+  - first:
+      4: 400016
+    second: Cylinder
+  - first:
+      4: 400018
+    second: Cylinder.001
+  - first:
+      4: 400020
+    second: Cylinder.002
+  - first:
+      4: 400022
+    second: Plane.004
+  - first:
+      4: 400024
+    second: Plane.005
+  - first:
+      4: 400026
+    second: Sphere
+  - first:
+      4: 400028
+    second: Sphere.001
+  - first:
+      4: 400030
+    second: Sphere.002
+  - first:
+      4: 400032
+    second: Sphere.003
+  - first:
+      4: 400034
+    second: //RootNode
+  - first:
+      23: 2300000
+    second: Circle
+  - first:
+      23: 2300002
+    second: Circle.001
+  - first:
+      23: 2300004
+    second: Circle.002
+  - first:
+      23: 2300006
+    second: Circle.003
+  - first:
+      23: 2300008
+    second: Cube
+  - first:
+      23: 2300010
+    second: Cube.001
+  - first:
+      23: 2300012
+    second: Cube.002
+  - first:
+      23: 2300014
+    second: Cube.003
+  - first:
+      23: 2300016
+    second: Cylinder
+  - first:
+      23: 2300018
+    second: Cylinder.001
+  - first:
+      23: 2300020
+    second: Cylinder.002
+  - first:
+      23: 2300022
+    second: Plane.004
+  - first:
+      23: 2300024
+    second: Plane.005
+  - first:
+      23: 2300026
+    second: Sphere
+  - first:
+      23: 2300028
+    second: Sphere.001
+  - first:
+      23: 2300030
+    second: Sphere.002
+  - first:
+      23: 2300032
+    second: Sphere.003
+  - first:
+      33: 3300000
+    second: Circle
+  - first:
+      33: 3300002
+    second: Circle.001
+  - first:
+      33: 3300004
+    second: Circle.002
+  - first:
+      33: 3300006
+    second: Circle.003
+  - first:
+      33: 3300008
+    second: Cube
+  - first:
+      33: 3300010
+    second: Cube.001
+  - first:
+      33: 3300012
+    second: Cube.002
+  - first:
+      33: 3300014
+    second: Cube.003
+  - first:
+      33: 3300016
+    second: Cylinder
+  - first:
+      33: 3300018
+    second: Cylinder.001
+  - first:
+      33: 3300020
+    second: Cylinder.002
+  - first:
+      33: 3300022
+    second: Plane.004
+  - first:
+      33: 3300024
+    second: Plane.005
+  - first:
+      33: 3300026
+    second: Sphere
+  - first:
+      33: 3300028
+    second: Sphere.001
+  - first:
+      33: 3300030
+    second: Sphere.002
+  - first:
+      33: 3300032
+    second: Sphere.003
+  - first:
+      43: 4300000
+    second: Cube.003
+  - first:
+      43: 4300002
+    second: Cube.001
+  - first:
+      43: 4300004
+    second: Plane.005
+  - first:
+      43: 4300006
+    second: Plane.004
+  - first:
+      43: 4300008
+    second: Circle.003
+  - first:
+      43: 4300010
+    second: Sphere.003
+  - first:
+      43: 4300012
+    second: Sphere.002
+  - first:
+      43: 4300014
+    second: Sphere.001
+  - first:
+      43: 4300016
+    second: Sphere
+  - first:
+      43: 4300018
+    second: Circle.002
+  - first:
+      43: 4300020
+    second: Circle.001
+  - first:
+      43: 4300022
+    second: Cube
+  - first:
+      43: 4300024
+    second: Circle
+  - first:
+      43: 4300026
+    second: Cylinder.001
+  - first:
+      43: 4300028
+    second: Cylinder.002
+  - first:
+      43: 4300030
+    second: Cylinder
+  - first:
+      43: 4300032
+    second: Cube.002
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: FineWood
+    second: {fileID: 2100000, guid: a88202ffefba7fa479d0fcd116e42811, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Material
+    second: {fileID: 2100000, guid: 1a484ad1b68689d48bea531870b65df9, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Material.001
+    second: {fileID: 2100000, guid: 53079b557856c2f4992645620be590a7, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Material.006
+    second: {fileID: 2100000, guid: f15e358f028035245b5c11d4a6eac886, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Material.007
+    second: {fileID: 2100000, guid: 0431aff7d577b2b47b036e831ded4e43, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Material.008
+    second: {fileID: 2100000, guid: ee2facd2d46dbf241a9b1a7ff5b123a3, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Material.009
+    second: {fileID: 2100000, guid: 9778e972c23e2b84e81e060e3a3e090a, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Material.010
+    second: {fileID: 2100000, guid: 50be24b95e2621e49a1df26eab2dfd35, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: RedWood.001
+    second: {fileID: 2100000, guid: b71dc55020124f94491fb96edcece451, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: RedWood.004
+    second: {fileID: 2100000, guid: 47c5d3f31bdbcac45802822812a8498e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: RedWood.005
+    second: {fileID: 2100000, guid: 4ffb833787a5e084fb0ca90b6d1f9171, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Rope
+    second: {fileID: 2100000, guid: 5db6ba20d195d8644b14c845ee3c79a0, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Wicker
+    second: {fileID: 2100000, guid: 3e467f961f3f50d4ea4c9b3b3dbc29d0, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: WoodEnd
+    second: {fileID: 2100000, guid: f9a83f4998968c249a801c22178f4cfd, type: 2}
   materials:
-    importMaterials: 1
+    materialImportMode: 1
     materialName: 0
     materialSearch: 1
+    materialLocation: 1
+    searchTexturesGlobally: 1
   animations:
     legacyGenerateAnimations: 4
     bakeSimulation: 0
-    resampleRotations: 1
+    resampleCurves: 1
     optimizeGameObjects: 0
+    removeConstantScaleCurves: 0
     motionNodeName: 
     animationImportErrors: 
     animationImportWarnings: 
     animationRetargetingWarnings: 
     animationDoRetargetingWarnings: 0
+    importAnimatedCustomProperties: 0
+    importConstraints: 0
     animationCompression: 1
     animationRotationError: 0.5
     animationPositionError: 0.5
     animationScaleError: 0.5
     animationWrapMode: 0
     extraExposedTransformPaths: []
+    extraUserProperties: []
     clipAnimations: []
     isReadable: 1
   meshes:
@@ -119,25 +368,57 @@ ModelImporter:
     globalScale: 1
     meshCompression: 0
     addColliders: 0
+    useSRGBMaterialColor: 1
+    sortHierarchyByName: 1
+    preBakeConvexCollisionMesh: 0
+    preBakeTriangleCollisionMesh: 0
+    importPhysicalCameras: 0
+    importVisibility: 0
     importBlendShapes: 1
+    importCameras: 0
+    importLights: 0
+    nodeNameCollisionStrategy: 0
+    fileIdsGeneration: 1
     swapUVChannels: 0
     generateSecondaryUV: 0
     useFileUnits: 1
-    optimizeMeshForGPU: 1
     keepQuads: 0
     weldVertices: 1
+    bakeAxisConversion: 0
+    preserveHierarchy: 0
+    skinWeightsMode: 0
+    maxBonesPerVertex: 4
+    minBoneWeight: 0.001
+    optimizeBones: 1
+    generateMeshLods: 0
+    meshLodGenerationFlags: 0
+    maximumMeshLod: -1
+    importUVs: -1
+    importVertexColors: 1
+    meshOptimizationFlags: -1
+    indexFormat: 1
     secondaryUVAngleDistortion: 8
     secondaryUVAreaDistortion: 15.000001
     secondaryUVHardAngle: 88
+    secondaryUVMarginMethod: 0
+    secondaryUVMinLightmapResolution: 40
+    secondaryUVMinObjectScale: 1
     secondaryUVPackMargin: 4
     useFileScale: 1
+    strictVertexDataChecks: 0
   tangentSpace:
     normalSmoothAngle: 60
     normalImportMode: 0
     tangentImportMode: 3
+    normalCalculationMode: 0
+    legacyComputeAllNormalsFromSmoothingGroupsWhenMeshHasBlendShapes: 1
+    blendShapeNormalImportMode: 1
+    normalSmoothingSource: 0
+    calculateBlendshapeNormalsDeltaFromImportedNormals: 1
+  referencedClips: []
   importAnimation: 1
-  copyAvatar: 0
   humanDescription:
+    serializedVersion: 3
     human: []
     skeleton: []
     armTwist: 0.5
@@ -147,11 +428,19 @@ ModelImporter:
     armStretch: 0.05
     legStretch: 0.05
     feetSpacing: 0
+    globalScale: 1
     rootMotionBoneName: 
     hasTranslationDoF: 0
+    hasExtraRoot: 0
+    skeletonHasParents: 0
   lastHumanDescriptionAvatarSource: {instanceID: 0}
+  autoGenerateAvatarMappingIfUnspecified: 1
   animationType: 0
   humanoidOversampling: 1
+  avatarSetup: 0
+  addHumanoidExtraRootOnlyWhenUsingAvatar: 0
+  importBlendShapeDeformPercent: 0
+  remapMaterialsIfMaterialImportModeIsNone: 1
   additionalBone: 0
   userData: 
   assetBundleName: 
