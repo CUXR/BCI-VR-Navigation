@@ -240,6 +240,12 @@ public static class RelaxedMarketBuilder
             if (changed) r.sharedMaterials = shared;
         }
 
+        // Some kit floor tiles carry non-kinematic Rigidbodies with gravity, so they fell out of
+        // the world at startup and the player dropped through the gap behind the spawn.
+        // Floors never simulate physics.
+        foreach (var rb in level.GetComponentsInChildren<Rigidbody>(true))
+            rb.isKinematic = true;
+
         // Ceiling fans spin through Turn_Move. A rotating object in view adds periodic visual
         // motion to the EEG, so the fans stay still.
         foreach (var mb in level.GetComponentsInChildren<MonoBehaviour>(true))
