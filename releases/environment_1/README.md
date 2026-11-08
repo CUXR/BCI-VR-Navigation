@@ -36,24 +36,24 @@ live EEG setup and model limitations.
 
 ## Source and rebuilding
 
-The requested `unity/` source directory is removed after packaging. An archive
-of both environments, including the desktop build changes, is preserved outside
-this repository on the build machine; its location is recorded in a local-only
-`source-backup.txt`. The archive is not included in this release. The original
-Unity projects also remain available in Git history before this release commit.
-Extract it into the repository root to restore `unity/`. Environment one uses
-Unity 2022.3.0f1 with Mac, Windows Mono, and Android build support.
+These packages were rebuilt from environment one at commit
+`d791dd996965aa96f2c62f2cb56ceb060f9d3a47`, including the relaxed market decor,
+cleared spawn view, and south-facing spawn. The build helper also restores the
+Windows entry point and uses the same XR-disabled settings for both desktop builds.
 
-Build entry points are `BCIIndoorBuild.Mac`, `BCIIndoorBuild.Windows`, and
-`BCIIndoorBuild.Build` (Quest), using `-buildTarget StandaloneOSX`, `Win64`,
-and `Android`, respectively. Outputs go to this directory.
+Source is in `unity/environment_1/`. Use Unity 2022.3.0f1 with Mac, Windows Mono,
+and Android build support. Build entry points are `BCIIndoorBuild.Mac`,
+`BCIIndoorBuild.Windows`, and `BCIIndoorBuild.Build` (Quest), using
+`-buildTarget StandaloneOSX`, `Win64`, and `Android`, respectively.
+Outputs go to `unity/environment_1/Build/`; package them into this directory.
+The Mac app is ad-hoc signed before creating the DMG. Regenerate
+`SHA256SUMS.txt` after packaging.
 
 ## Verification
 
-All three Unity builds completed successfully. The Mac app was launched and
-visually checked, keyboard movement worked, and its prediction WebSocket
-connected to a local test server. The DMG checksum, Windows ZIP integrity,
+All three Unity builds completed successfully. The rebuilt Mac app launched,
+connected to a local prediction WebSocket server, received test prediction frames,
+and remained running. The Mac app signature, DMG checksum, Windows ZIP integrity,
 and APK signature were verified. Windows and Quest runtime testing remains
-pending; no headset was connected. Android packaging warned that it could
-not strip debug metadata from the bundled Oculus library and included the
-library unchanged. The APK is for local sideloading, not a store release.
+pending; no headset was used. The APK is a development build for local
+sideloading, not a store release.

@@ -27,9 +27,19 @@ public static class BCIIndoorBuild
     /// Desktop build for Apple Silicon and Intel Macs, controlled by DesktopNavigation.
     public static void Mac()
     {
-        string output = Path.GetFullPath(Path.Combine(Application.dataPath, "../Build/BCIIndoor.app"));
-        Directory.CreateDirectory(Path.GetDirectoryName(output));
         UnityEditor.OSXStandalone.UserBuildSettings.architecture = UnityEditor.Build.OSArchitecture.x64ARM64;
+        Desktop(BuildTarget.StandaloneOSX, "../Build/BCIIndoor.app");
+    }
+
+    public static void Windows()
+    {
+        Desktop(BuildTarget.StandaloneWindows64, "../Build/Windows/BCIIndoor.exe");
+    }
+
+    static void Desktop(BuildTarget target, string relativePath)
+    {
+        string output = Path.GetFullPath(Path.Combine(Application.dataPath, relativePath));
+        Directory.CreateDirectory(Path.GetDirectoryName(output));
 
         // Standalone XR is configured to start the Mock HMD loader, which throws on a Mac with no
         // headset. The desktop build ships with no Standalone XR loaders and XR startup off. The
@@ -42,7 +52,7 @@ public static class BCIIndoorBuild
         var loaders = manager != null ? new System.Collections.Generic.List<UnityEngine.XR.Management.XRLoader>(manager.activeLoaders) : new System.Collections.Generic.List<UnityEngine.XR.Management.XRLoader>();
         if (xr != null) xr.InitManagerOnStart = false;
         foreach (var l in loaders) manager.TryRemoveLoader(l);
-        Debug.Log("[BCIIndoorBuild] Standalone XR for Mac build: init=" + (xr != null && xr.InitManagerOnStart) + " loaders=" + (manager != null ? manager.activeLoaders.Count : -1) + " (removed " + loaders.Count + ")");
+        Debug.Log("[BCIIndoorBuild] Standalone XR for desktop build: init=" + (xr != null && xr.InitManagerOnStart) + " loaders=" + (manager != null ? manager.activeLoaders.Count : -1) + " (removed " + loaders.Count + ")");
         BuildReport report;
         try
         {
@@ -50,7 +60,7 @@ public static class BCIIndoorBuild
             {
                 scenes = new[] { "Assets/Scenes/FreeNavScene.unity" },
                 locationPathName = output,
-                target = BuildTarget.StandaloneOSX,
+                target = target,
                 options = BuildOptions.None,
             });
         }
@@ -65,8 +75,8 @@ public static class BCIIndoorBuild
         var result = report;
         if (result.summary.result != BuildResult.Succeeded)
         {
-            throw new Exception("Indoor Mac build failed: " + result.summary.result);
+            throw new Exception("Indoor desktop build failed: " + result.summary.result);
         }
-        Debug.Log("Indoor Mac app: " + output);
+        Debug.Log("Indoor desktop build: " + output);
     }
 }
