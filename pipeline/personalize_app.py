@@ -38,6 +38,9 @@ def gather_app_data(participant: int, data_root: Path) -> ParticipantData:
     if not sessions:
         raise ValueError("No paired EEG and trial recordings were found. Collect and save a session first.")
     data = ParticipantData([], [], [], [], [], len(sessions), 0)
+    recorded = dict.fromkeys([*ml_config.MI_TYPES, ml_config.BLINK_TYPE], 0)
+    short_mi = 0
+    incomplete = 0
     rng = np.random.default_rng(ml_config.RANDOM_STATE)
     for session in sessions:
         eeg, trials, sfreq = load_session(session)
@@ -55,18 +58,31 @@ def gather_app_data(participant: int, data_root: Path) -> ParticipantData:
         trials = trials.copy()
         for column in ("start_time", "end_time", "event_marker"):
             trials[column] = pd.to_numeric(trials[column], errors="coerce")
+        for kind in recorded:
+            recorded[kind] += int((trials["trial_type"] == kind).sum())
         # Recorder blink rows span ±0.5 s, but the inference window is only 0.5 s.
         # Center that window on the keypress instead of truncating before the blink.
         blinks = trials["trial_type"] == ml_config.BLINK_TYPE
         half = ml_config.BLINK_EPOCH_S / 2
         trials.loc[blinks, "start_time"] = trials.loc[blinks, "event_marker"] - half
         trials.loc[blinks, "end_time"] = trials.loc[blinks, "event_marker"] + half
-        trials = trials[
+        covered = (
             (trials["start_time"] >= times[0]) & (trials["end_time"] <= times[-1])
             & (trials["end_time"] > trials["start_time"])
-        ]
+        )
+        incomplete += int((~covered & trials["trial_type"].isin(recorded)).sum())
+        trials = trials[covered]
+        mi_trials = trials[trials["trial_type"].isin(ml_config.MI_TYPES)]
+        sample_counts = (
+            np.searchsorted(times, mi_trials["end_time"], side="right")
+            - np.searchsorted(times, mi_trials["start_time"], side="left")
+        )
+        too_short = int((sample_counts < int(ml_config.MI_EPOCH_MIN_S * sfreq)).sum())
+        short_mi += too_short
         # The live engine does not run ASR, even when asrpy is installed.
-        epochs, labels, meta = extract_mi_epochs(eeg, trials, sfreq, use_asr=False)
+        epochs, labels, meta = extract_mi_epochs(
+            eeg, trials, sfreq, use_asr=False, reject_signal_quality=False,
+        )
         data.mi_epochs.extend(epochs)
         data.mi_labels.extend(labels)
         data.mi_meta.extend(meta)
@@ -76,9 +92,14 @@ def gather_app_data(participant: int, data_root: Path) -> ParticipantData:
     counts = [data.mi_labels.count(0), data.mi_labels.count(1), len(data.blink_pos), len(data.blink_neg)]
     if min(counts) < 2:
         raise ValueError(
-            "Not enough usable examples after signal checks "
+            f"Saved recordings found: left: {recorded[ml_config.MI_TYPES[0]]}, "
+            f"right: {recorded[ml_config.MI_TYPES[1]]}, blink: {recorded[ml_config.BLINK_TYPE]}. "
+            "Usable examples "
             f"(left: {counts[0]}, right: {counts[1]}, blink: {counts[2]}, non-blink: {counts[3]}). "
-            "At least two of each are needed. Collect another session with both hands and deliberate blinks."
+            f"Excluded: {short_mi} hand trials shorter than two seconds of EEG, "
+            f"{incomplete} trials without full EEG coverage. "
+            "At least two usable examples of each are needed. Collect again; "
+            "keep imagining until the countdown finishes before pressing Space."
         )
     return data
 

@@ -289,10 +289,17 @@ private struct CueStage: View {
                 .frame(width: 220, height: 220)
                 Text("Imagine grabbing the cup with your \(cue.rawValue) hand.")
                     .font(.system(size: 20, weight: .semibold))
-                HStack(spacing: 8) {
-                    Text("Press")
-                    KeyCap(key: "Space")
-                    Text("when you finish imagining")
+                TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                    let remaining = max(0, (recorder.imageryReadyAt ?? context.date).timeIntervalSince(context.date))
+                    if remaining > 0 {
+                        Text("Keep imagining for \(Int(remaining.rounded(.up))) more seconds…")
+                    } else {
+                        HStack(spacing: 8) {
+                            Text("Press")
+                            KeyCap(key: "Space")
+                            Text("when you finish imagining")
+                        }
+                    }
                 }
                 .font(.system(size: 16))
                 .foregroundStyle(.secondary)

@@ -35,8 +35,12 @@ bundle is saved as `ml_pipeline/models/participants/subNN_app.pkl` and rediscove
 on later visits. These files are ignored by Git.
 
 At least two usable trials per hand, two deliberate blinks, and two non-blink windows
-are required. MI epochs pass the existing signal-quality gates. Blink windows are
+are required. Saved MI trials are not rejected for signal quality during personal
+training; duration and EEG coverage requirements still apply. Blink windows are
 centered on the recorded keypress; training skips ASR to match live preprocessing.
+Hand cues require three seconds before Space can finish a trial. Saving waits for
+the final blink's post-event EEG. If training cannot proceed, the message lists
+saved and usable counts, short trials, and missing EEG coverage.
 This minimum makes fitting possible; it does not establish reliable control or an
 improvement over the group model. Bundle cross-validation scores are exploratory
 within-recording estimates, not held-out-session validation. Test with the headband.

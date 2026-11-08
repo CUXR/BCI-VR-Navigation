@@ -89,6 +89,60 @@ class AppPersonalizationTests(unittest.TestCase):
         self.assertEqual(old.read_bytes(), b"previous model")
         self.assertEqual(list(output.iterdir()), [old])
 
+    def test_explains_short_and_incomplete_saved_trials(self):
+        trial_path = self.subject / "trial_log_20260101_120000.csv"
+        trials = pd.read_csv(trial_path)
+        mi = trials.trial_type.str.startswith("motor_imagery")
+        trials.loc[mi, "end_time"] = trials.loc[mi, "start_time"] + 0.7
+        # A full-length flat trial is included in app training.
+        trials.loc[0, "end_time"] = trials.loc[0, "start_time"] + 2.2
+        eeg_path = self.subject / "eeg_data_20260101_120000.csv"
+        eeg = pd.read_csv(eeg_path)
+        mask = eeg.timestamp.between(trials.loc[0, "start_time"], trials.loc[0, "end_time"])
+        eeg.loc[mask, [f"EEG_{i}" for i in range(4)]] = 0
+        eeg.to_csv(eeg_path, index=False)
+        # Reproduce a final blink logged before its post-event EEG arrived.
+        trials.loc[trials.index[-1], "event_marker"] = eeg.timestamp.max() - 0.1
+        trials.to_csv(trial_path, index=False)
+        with self.assertRaises(ValueError) as caught:
+            gather_app_data(1, self.root / "data")
+        message = str(caught.exception)
+        self.assertIn("Saved recordings found: left: 6, right: 6, blink: 6", message)
+        self.assertIn("11 hand trials shorter", message)
+        self.assertIn("Usable examples (left: 1, right: 0", message)
+        self.assertNotIn("signal checks", message)
+        self.assertIn("1 trials without full EEG coverage", message)
+
+    def test_app_keeps_noisy_and_flat_trials_without_changing_default_gate(self):
+        from dataset import extract_mi_epochs
+
+        trial_path = self.subject / "trial_log_20260101_120000.csv"
+        trials = pd.read_csv(trial_path)
+        eeg_path = self.subject / "eeg_data_20260101_120000.csv"
+        eeg = pd.read_csv(eeg_path)
+        channels = [f"EEG_{i}" for i in range(4)]
+        for index in (0, 1):
+            mask = eeg.timestamp.between(trials.loc[index, "start_time"], trials.loc[index, "end_time"])
+            signal = 180 * np.sin(2 * np.pi * 10 * eeg.loc[mask, "timestamp"].to_numpy())
+            eeg.loc[mask, channels] = signal[:, None] * np.ones((1, 4)) if index == 0 else 0
+        eeg.to_csv(eeg_path, index=False)
+        _, labels, _ = extract_mi_epochs(eeg, trials, 256, use_asr=False)
+        self.assertEqual(len(labels), 10)
+        data = gather_app_data(1, self.root / "data")
+        self.assertEqual(data.mi_labels.count(0), 6)
+        self.assertEqual(data.mi_labels.count(1), 6)
+
+    def test_two_usable_examples_per_class_can_train(self):
+        trial_path = self.subject / "trial_log_20260101_120000.csv"
+        trials = pd.read_csv(trial_path).groupby("trial_type", sort=False).head(2)
+        trials.to_csv(trial_path, index=False)
+        path, summary = personalize_app(
+            participant=1, data_root=self.root / "data", output_dir=self.root / "models",
+        )
+        self.assertTrue(path.is_file())
+        self.assertEqual(summary["mi_class_counts"], {name: 2 for name in CLASS_NAMES})
+        self.assertEqual(summary["n_blink_pos"], 2)
+
     def test_train_load_predict_and_reject_wrong_participant(self):
         data = gather_app_data(1, self.root / "data")
         self.assertEqual(data.mi_labels.count(0), 6)

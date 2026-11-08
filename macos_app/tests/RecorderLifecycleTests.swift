@@ -83,6 +83,10 @@ import SwiftData
                 if case .imagining = recorder.phase { return recorder.imageryDone == trial }
                 return false
             }
+            recorder.pressSpace()
+            precondition(recorder.phase == .imagining(trial % 2 == 0 ? .left : .right),
+                         "Early Space must keep collecting the imagery trial")
+            try await waitUntil("minimum imagery duration") { Date.now >= recorder.imageryReadyAt! }
             recorder.pressSpace()  // A double press must not end the trial twice.
             recorder.pressSpace()
         }
@@ -125,6 +129,7 @@ import SwiftData
         try await waitUntil("ready again") { recorder.phase == .ready }
         recorder.pressEnter()
         try await waitUntil("first trial") { if case .imagining = recorder.phase { return true }; return false }
+        try await waitUntil("minimum imagery duration") { Date.now >= recorder.imageryReadyAt! }
         recorder.pressSpace()
         try await waitUntil("second trial") { if case .imagining(.right) = recorder.phase { return true }; return false }
         recorder.stopAndSave()

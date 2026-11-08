@@ -142,7 +142,8 @@ def _resample_if_needed(data_2d, sfreq_orig, sfreq_target=None):
 # Motor imagery epoch extraction
 # ═══════════════════════════════════════════════════════════════════
 
-def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True):
+def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True,
+                      reject_signal_quality=True):
     """Extract and preprocess motor imagery epochs.
 
     Args:
@@ -150,6 +151,7 @@ def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True
         trials_df: trial log DataFrame
         sfreq: sampling frequency
         ch_indices: which channels to use (default: all 4)
+        reject_signal_quality: reject noisy/flat epochs (disabled for app personal training)
 
     Returns:
         epochs: list of (n_channels, n_samples) arrays — fixed length
@@ -189,18 +191,18 @@ def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True
         # Per-epoch quality gate
         ch_quality = score_channel_quality_epoch(cleaned, actual_sfreq)
         n_good = np.sum(ch_quality)
-        if n_good < max(2, len(ch_indices) // 2):
+        if reject_signal_quality and n_good < max(2, len(ch_indices) // 2):
             continue
 
         # PTP rejection on good channels only
-        good_data = cleaned[ch_quality]
+        good_data = cleaned[ch_quality] if n_good else cleaned
         ptp = np.ptp(good_data, axis=1).max()
-        if ptp > ARTIFACT_PTP_MI:
+        if reject_signal_quality and ptp > ARTIFACT_PTP_MI:
             continue
 
         # Flat channel check
         stds = np.std(cleaned, axis=1)
-        if np.any(stds[ch_quality] < FLAT_THRESHOLD_UV):
+        if reject_signal_quality and np.any(stds[ch_quality] < FLAT_THRESHOLD_UV):
             continue
 
         label = LABEL_MAP[trial["trial_type"]]

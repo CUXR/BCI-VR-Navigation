@@ -57,6 +57,7 @@ final class RecorderRunner {
     /// 1-based round of the imagery block.
     private(set) var round = 1
     private(set) var lastBlinkAt: Date?
+    private(set) var imageryReadyAt: Date?
     /// A non-fatal message from the helper, e.g. a blink it could not record.
     private(set) var notice: String?
     private(set) var eegFile: String?
@@ -196,6 +197,7 @@ final class RecorderRunner {
         blinksDone = 0
         round = 1
         lastBlinkAt = nil
+        imageryReadyAt = nil
         notice = nil
         eegFile = nil
         trialLogFile = nil
@@ -211,6 +213,7 @@ final class RecorderRunner {
     /// Space: the participant finished imagining.
     func pressSpace() {
         guard case .imagining = phase, waiter != nil else { return }
+        guard let imageryReadyAt, Date.now >= imageryReadyAt else { return }
         send(["cmd": "end_trial", "t": Self.now()])
         // Leave the cue at once so a second press cannot end the trial twice.
         phase = .resting(until: .now + restSeconds)
@@ -247,6 +250,8 @@ final class RecorderRunner {
                     "cmd": "start_trial", "trial_type": cue.trialType, "block": 1,
                     "notes": "\(cue.title) motor imagery - Round \(index + 1)", "t": Self.now(),
                 ])
+                // Leave a margin above the trainer's two-second EEG minimum.
+                imageryReadyAt = .now + 3
                 phase = .imagining(cue)
                 guard await waitForKey() else { return }
                 let lastTrial = index == rounds - 1 && cue == .right
