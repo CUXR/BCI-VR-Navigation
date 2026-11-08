@@ -28712,7 +28712,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   startPosition: {x: 0, y: 1.5, z: 0}
-  startYRotation: 0
+  startYRotation: 180
 --- !u!114 &376380764
 MonoBehaviour:
   m_ObjectHideFlags: 0
