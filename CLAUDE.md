@@ -67,7 +67,7 @@ EEG column mapping: EEG_0=TP9, EEG_1=AF7, EEG_2=AF8, EEG_3=TP10.
 
 - Timestamp synchronization between EEG data and trial log is critical — both use the same BrainFlow session clock
 - Data collection runs in a background thread; shared state modifications require care
-- TTS uses platform-specific commands (`say` on macOS, `espeak`/`pyttsx3` elsewhere)
+- The macOS app plays pre-recorded cue clips (`macos_app/BCINavigator/Resources/Speech`); rerun `macos_app/backend/generate_speech_clips.py` with `OPENAI_API_KEY` set after changing any spoken phrase. The legacy PsychoPy script uses platform TTS commands (`say` on macOS, `espeak`/`pyttsx3` elsewhere)
 - Experiment protocol details are in `EXPERIMENT_PROCEDURE.md`
 - Data structure spec is in `PROGRAMMING_REQUIREMENTS.md` — treat as authoritative
 - I want you to ALWAYS push using PULL REQUEST.

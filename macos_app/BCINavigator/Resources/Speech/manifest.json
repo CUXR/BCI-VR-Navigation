@@ -1,0 +1,8 @@
+{
+  "Now, imagine reaching out with your left hand to grab a cup on your left side. Focus on the sensation of your left hand moving.": "cue_left_full.m4a",
+  "Now, imagine reaching out with your right hand to grab a cup on your right side. Focus on the sensation of your right hand moving.": "cue_right_full.m4a",
+  "Grab left": "cue_left_short.m4a",
+  "Grab right": "cue_right_short.m4a",
+  "Now we will record intentional blinks. Blink deliberately once, and press B at the same moment. Repeat until the counter reaches ten.": "blink_intro.m4a",
+  "Experiment complete. Thank you for participating.": "session_complete.m4a"
+}
