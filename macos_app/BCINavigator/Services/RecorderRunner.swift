@@ -69,7 +69,7 @@ final class RecorderRunner {
 
     /// Rest between imagery trials, in seconds.
     var restSeconds: TimeInterval = 3
-    /// Replaces the system voice; tests use it to skip speech.
+    /// Replaces the spoken cues; tests use it to skip speech.
     var speakOverride: ((String) async -> Void)?
 
     private var process: Process?
@@ -78,7 +78,8 @@ final class RecorderRunner {
     private var errorMessage: String?
     private var protocolTask: Task<Void, Never>?
     private var waiter: CheckedContinuation<Bool, Never>?
-    private var speech: Process?
+    /// Cuts off the cue that is currently playing.
+    private var stopSpeech: (() -> Void)?
     private var stopping = false
 
     init() {
@@ -182,7 +183,7 @@ final class RecorderRunner {
         guard canStop else { return }
         stopping = true
         protocolTask?.cancel()
-        speech?.terminate()
+        stopSpeech?()
         resumeWaiter(false)
         phase = .saving
         send(["cmd": "stop"])
@@ -294,15 +295,26 @@ final class RecorderRunner {
 
     private func say(_ text: String) async {
         if let speakOverride { await speakOverride(text); return }
+        if let clip = SpokenClip(text: text) {
+            stopSpeech = { clip.stop() }
+            await clip.play()
+        } else {
+            // Only reached when a phrase changed without rerunning generate_speech_clips.py.
+            appendLog("No recorded clip for \"\(text)\"; using the system voice.")
+            await systemSay(text)
+        }
+        stopSpeech = nil
+    }
+
+    private func systemSay(_ text: String) async {
         let voice = Process()
         voice.executableURL = URL(fileURLWithPath: "/usr/bin/say")
         voice.arguments = ["-v", "Samantha", "-r", "180", text]
-        speech = voice
+        stopSpeech = { voice.terminate() }
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             voice.terminationHandler = { _ in done.resume() }
             do { try voice.run() } catch { done.resume() }
         }
-        if speech === voice { speech = nil }
     }
 
     private static func now() -> Double { Date().timeIntervalSince1970 }
