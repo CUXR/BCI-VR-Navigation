@@ -1,6 +1,8 @@
 # BCI-VR Navigation Control
 
-EEG-based control system for VR navigation using the Muse 2 headband. Decodes left/right motor imagery and intentional blinks from 4-channel EEG to enable hands-free VR navigation in Unity — no physical controllers required.
+EEG-powered VR navigation using the Muse 2 headband and Unity. Imagine turning left, turning right, or walking forward to navigate the environment.
+
+The native macOS app, BCI Navigator, guides you through headband setup, EEG recording, personal model training, and live control.
 
 ## Demos
 
@@ -18,12 +20,17 @@ EEG-based control system for VR navigation using the Muse 2 headband. Decodes le
 
 ## Control Scheme
 
-| Brain Signal | Action in `FreeNavScene` | Historical offline accuracy |
+| Brain Signal | Action in `FreeNavScene` | Model support |
 |---|---|---|
-| Left motor imagery | Rotate left | ~61% |
-| Right motor imagery | Rotate right | ~61% |
-| Intentional blink | Detected; interaction not yet mapped | **88.7%** |
-| Idle / baseline | No action | — |
+| Left motor imagery | Rotate left | Group and personal models |
+| Right motor imagery | Rotate right | Group and personal models |
+| Forward walking imagery | Move forward | Personal model trained with eligible Walk trials |
+| Intentional blink | Detected; interaction not yet mapped | Blink classifier |
+| Idle / baseline | No action | Personal models can learn idle from Relax trials |
+
+The separate four-direction pipeline also supports backward movement with a
+compatible model. See [Classification Results](#classification-results) for
+offline evaluation scores.
 
 ## Hardware
 
@@ -31,7 +38,28 @@ EEG-based control system for VR navigation using the Muse 2 headband. Decodes le
 - **Channels:** TP9 (left temporal), AF7 (left frontal), AF8 (right frontal), TP10 (right temporal)
 - **Interface:** BrainFlow SDK
 
-## Quick Start
+## Get Started with BCI Navigator
+
+1. Download `BCINavigator-mac.dmg` from [GitHub Releases](https://github.com/CUXR/BCI/releases/latest) and install the app. Requires macOS 26 or later.
+2. In this repository, run `uv sync --python 3.11`.
+3. Open the app's admin view with ⇧⌘A. Set **Settings → Repo folder** to your checkout and **Python interpreter** to `<checkout>/.venv/bin/python`.
+4. Sign in, connect the Muse 2, check sensor quality, and record a session.
+5. Under **Real-time control → Get ready**, choose **Train Your Model** or use the **Group model**.
+6. Start live control, then choose **Open VR environment** to launch BCI Indoor on your Mac.
+
+Recording includes left/right imagery, forward Walk and Relax trials, and
+deliberate blinks, with recorded voice cues. Forward trials are eligible for
+training only when their block's imagery check approves them. Personal training
+performance still requires live validation.
+
+See the [app setup instructions](macos_app/README.md#download) for installation
+and the [environment build guide](releases/environment_1/README.md) for the Mac,
+Windows, and Quest packages.
+
+## Alternative Research Workflow: PsychoPy and PyQt
+
+Use this workflow to collect data with PsychoPy, train the historical classifiers,
+and inspect predictions in the PyQt feedback GUI.
 
 ```bash
 # 1. Setup (Python 3.11; install uv first: https://docs.astral.sh/uv/getting-started/installation/)
@@ -78,13 +106,6 @@ The backend reports signal quality separately from transport/recording errors.
 The current recorder and Unity inference pipeline include live monitoring.
 See [signal-quality setup, thresholds, and validation](eeg_to_meta/signal-quality.md).
 
-## BCI Navigator macOS app
-
-Download **BCI Navigator** from [GitHub Releases](https://github.com/CUXR/BCI/releases/latest)
-for guided recording, personal model training, and live control. Requires macOS 26
-or later plus this repository and its Python environment. See the
-[app setup instructions](macos_app/README.md#download).
-
 ## Run the Unity Navigation System
 
 Standalone environment-one builds and instructions are in
@@ -116,12 +137,16 @@ uv run python -m pipeline realtime \
 The packaged APK connects to `127.0.0.1:8765`. Use the USB `adb reverse`
 command above to reach the prediction server on your computer. This APK does
 not have a runtime Wi-Fi host selector. A direct LAN connection requires
-restoring the archived Unity source, changing the prediction host, and rebuilding.
+changing the prediction host in `unity/environment_1/` and rebuilding; see the
+[source and build instructions](releases/environment_1/README.md#source-and-rebuilding).
 The desktop apps connect to the prediction server on the same computer.
 
 `--serial` accepts either `15C3` or `Muse-15C3`. An explicit `--model` needs no
 `--participant`. The included model is a legacy two-class bundle for left/right
-turns; forward/backward movement needs a compatible four-class model.
+turns. BCI Navigator personal models can add `mi_forward` and `idle` from eligible
+Walk and Relax recordings. The separate [four-direction pipeline](pipeline/README.md)
+uses `mi_forward`, `mi_backward`, `mi_rotate_left`, and `mi_rotate_right` for
+forward/backward movement and turning.
 
 `--mi-threshold 0.70` requires at least 70% model confidence before recognizing
 a motor imagery direction. You can adjust it; the default is 0.55. It also
@@ -135,7 +160,11 @@ low-confidence, stale, or disconnected input does not sustain movement.
 
 ## System Architecture
 
-Desktop feedback workflow (accuracy figures refer to the historical offline evaluation below). The Quest workflow streams predictions from `eeg_to_meta` over WebSocket port `8765` to Unity's `PredictionWebSocketClient` and `FreeNavController`.
+BCI Navigator coordinates recording, personal training, and live inference through
+Python helpers. Predictions stream over WebSocket port `8765` to Unity's
+`PredictionWebSocketClient` and `FreeNavController` on desktop or Quest.
+
+The alternative PyQt feedback workflow is shown below:
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
@@ -148,7 +177,6 @@ Desktop feedback workflow (accuracy figures refer to the historical offline eval
                  ┌──────▼───────┐               ┌────────▼────────┐
                  │ Blink Detect │               │ Motor Imagery   │
                  │ LDA, 500ms   │               │ RF, 3s window   │
-                 │ 88.7% acc    │               │ ~61% acc        │
                  └──────┬───────┘               └────────┬────────┘
                         │                                 │
                         └─────────────┬───────────────────┘
@@ -164,16 +192,18 @@ Desktop feedback workflow (accuracy figures refer to the historical offline eval
 
 1. **Hardware / Streaming** — BrainFlow interface for Muse 2. Streams EEG to CSV or rebroadcasts over multicast for multiple consumers.
 
-2. **Experiment / Recording** — PsychoPy-based visual cue paradigm with threaded background EEG collection. Produces paired CSVs per session (raw EEG + trial log). See [Experiment Procedure](EXPERIMENT_PROCEDURE.md).
+2. **Experiment / Recording** — BCI Navigator provides guided in-app recording with voice cues; the alternative PsychoPy workflow uses visual cues. Both save paired EEG and trial-log CSVs. See [Data Collection](#data-collection) and [Experiment Procedure](EXPERIMENT_PROCEDURE.md).
 
 3. **Analysis / ML** — Signal processing (MNE bandpass/notch filtering, artifact removal), feature extraction (band power, Hjorth, CSP, time-frequency), and classification (LDA, SVM, RF). Three pipeline versions tested across 4 subjects.
 
 ## Project Structure
 
 ```
+macos_app/                             # BCI Navigator app and Python helpers
 pipeline/                              # Collection, training, personalization, realtime CLI
 ml_pipeline/                           # Models and feature pipeline used by Quest inference
 eeg_to_meta/                           # Muse acquisition and prediction WebSocket server
+unity/environment_1/                   # Unity source for the packaged navigation environment
 releases/environment_1/                # Standalone Mac, Windows, and Quest builds
 
 all_ml_models/
@@ -225,6 +255,21 @@ data_analysis/                         # See data_analysis/README.md
 ```
 
 ## Data Collection
+
+### BCI Navigator
+
+The app records left/right imagery, forward Walk and Relax trials, and deliberate
+blinks. Defaults are 20 hand-imagery trials, 20 Walk + 20 Relax trials, and 10
+blinks. The walking block includes instructions, practice, and an explain-back
+check; Walk and Relax trials last four seconds.
+
+Sessions save paired EEG and trial-log CSVs in `data/subNN/`, plus
+`imagery_check_<timestamp>.json` for walking checks. Personal training uses approved
+walking blocks and saves each participant's model to
+`ml_pipeline/models/participants/subNN_app.pkl`. Hand-only recordings retain the
+left/right model. See the [app guide](macos_app/README.md) for recording and training.
+
+### PsychoPy
 
 The PsychoPy workflow records two CSVs per session:
 
@@ -316,7 +361,7 @@ Example left-turn prediction:
 }
 ```
 
-- **Class and confidence** — `predicted_class` identifies the action; `confidence` is a score from 0 to 1. Legacy left/right labels rotate the player; compatible four-class models add `mi_forward`, `mi_backward`, `mi_rotate_left`, and `mi_rotate_right`.
+- **Class and confidence** — `predicted_class` identifies the action; `confidence` is a score from 0 to 1. Legacy left/right labels rotate the player. BCI Navigator personal models can add `mi_forward`; the separate four-direction models use `mi_forward`, `mi_backward`, `mi_rotate_left`, and `mi_rotate_right`.
 - **Stability and timing** — navigation predictions must be stable and meet the confidence threshold. The server sends at most one navigation command every 3 seconds and omits `idle` frames. Unity rejects stale timestamps and stops movement when an accepted command expires.
 - **Diagnostics** — `raw_probs` contains per-class probabilities. `key_hint` is advisory; navigation uses the class label directly, without injecting keyboard input.
 - **Pipeline state** — messages with `type: "state"` report lifecycle transitions such as `personalizing_start`, `personalizing_end`, and `realtime_ready` separately from predictions.
@@ -375,5 +420,6 @@ Dependencies are declared in `pyproject.toml` and resolved in `uv.lock`. Install
 | Spencer | BCI Lead |
 | Alan | BCI Sub-team member |
 | Michelle | BCI Sub-team member |
+| James | BCI Sub-team member |
 
-Cornell CUXR Lab
+Cornell XR Project Team
