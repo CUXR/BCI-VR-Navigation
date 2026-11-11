@@ -6,6 +6,16 @@ A native app that guides a participant through one session: sign in, fit the Mus
 
 macOS 26, Xcode 26, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`), and the repo's Python environment at `.venv` (`uv sync`).
 
+## Download
+
+Download `BCINavigator-mac.dmg` from [GitHub Releases](https://github.com/CUXR/BCI/releases/latest)
+and drag **BCI Navigator.app** to Applications. The app supports Apple Silicon and
+Intel Macs running macOS 26 or later. It is locally signed and not Apple-notarized.
+The prebuilt app still needs this repository and its Python environment: run
+`uv sync --python 3.11` in your checkout, then press ⇧⌘A in the app and set
+**Settings → Repo folder** to the checkout and **Python interpreter** to
+`<checkout>/.venv/bin/python`. Xcode and XcodeGen are only needed to build from source.
+
 ## Build and run
 
 ```bash

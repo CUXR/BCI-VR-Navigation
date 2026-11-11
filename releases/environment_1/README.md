@@ -1,6 +1,7 @@
 # Environment one: standalone builds
 
 Unity Editor and Unity Hub are not needed to run these builds.
+Download these packages from [GitHub Releases](https://github.com/CUXR/BCI/releases/latest).
 
 - **Mac:** open `BCIIndoor-mac.dmg`, then drag **BCI Indoor.app** to Applications.
   Supports Apple Silicon and Intel. Locally signed; not Apple-notarized.
@@ -36,10 +37,10 @@ live EEG setup and model limitations.
 
 ## Source and rebuilding
 
-These packages were rebuilt from environment one at commit
-`d791dd996965aa96f2c62f2cb56ceb060f9d3a47`, including the relaxed market decor,
-cleared spawn view, and south-facing spawn. The build helper also restores the
-Windows entry point and uses the same XR-disabled settings for both desktop builds.
+These packages were rebuilt on November 11, 2026 from environment one at commit
+`740939be4c46ddff9c31b23f6302e5660c8025d7`, including the spawn-area floor fix,
+relaxed market decor, cleared spawn view, and south-facing spawn. Both desktop
+builds use XR-disabled settings.
 
 Source is in `unity/environment_1/`. Use Unity 2022.3.0f1 with Mac, Windows Mono,
 and Android build support. Build entry points are `BCIIndoorBuild.Mac`,

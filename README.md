@@ -78,6 +78,13 @@ The backend reports signal quality separately from transport/recording errors.
 The current recorder and Unity inference pipeline include live monitoring.
 See [signal-quality setup, thresholds, and validation](eeg_to_meta/signal-quality.md).
 
+## BCI Navigator macOS app
+
+Download **BCI Navigator** from [GitHub Releases](https://github.com/CUXR/BCI/releases/latest)
+for guided recording, personal model training, and live control. Requires macOS 26
+or later plus this repository and its Python environment. See the
+[app setup instructions](macos_app/README.md#download).
+
 ## Run the Unity Navigation System
 
 Standalone environment-one builds and instructions are in
