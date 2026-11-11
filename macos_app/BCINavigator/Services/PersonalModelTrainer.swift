@@ -96,9 +96,14 @@ final class PersonalModelTrainer {
         let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         // If the atomic save completed just before Cancel, report that success honestly.
         if status == 0, result?["event"] as? String == "trained", modelURL != nil {
-            let imagery = result?["n_mi_epochs"] as? Int ?? 0
+            let counts = result?["mi_class_counts"] as? [String: Int] ?? [:]
+            let hands = (counts["left_motor_imagery"] ?? 0) + (counts["right_motor_imagery"] ?? 0)
             let blinks = result?["n_blink_pos"] as? Int ?? 0
-            phase = .trained("Trained on \(imagery) hand trials and \(blinks) blinks. Ready to use.")
+            if let walking = counts["mi_forward"] {
+                phase = .trained("Trained on \(hands) hand trials, \(walking) walking trials, \(counts["idle"] ?? 0) relax trials and \(blinks) blinks. Ready to use.")
+            } else {
+                phase = .trained("Trained on \(hands) hand trials and \(blinks) blinks. Ready to use.")
+            }
         } else if phase == .cancelling {
             phase = .cancelled
         } else {

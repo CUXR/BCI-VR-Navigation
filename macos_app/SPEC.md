@@ -94,8 +94,10 @@ Navigation: every screen has a Back button to the previous screen. Sidebar steps
 Condensed from `EXPERIMENT_PROCEDURE.md`, matched to what the recorder runs.
 
 - Part 1, 20 trials: on "Grab left" or "Grab right", imagine grabbing the cup with that hand, then press Space.
-- Part 2, 10 trials: blink once deliberately and press B at the same moment.
-- Before starting: forearms on the table, a cup about 5 cm from each hand, chin slightly raised, head still.
+- Part 2, 20 Walk + 20 Relax trials: forward walking imagery (see 6.7a).
+- Part 3, 10 trials: blink once deliberately and press B at the same moment.
+- Each part card has a trial slider: 2–100 imagery trials (equal per hand), 0–50 Walk trials (the same number of Relax trials is added; 0 skips Part 2), 1–50 blinks.
+- Before starting: forearms on the table, a cup about 5 cm from each hand, chin slightly raised, head still, both feet flat and still.
 - After Start Recording the app connects to the headband; Enter (or Start) begins the protocol.
 - Esc stops at any time; data recorded so far is saved.
 
@@ -107,9 +109,19 @@ Condensed from `EXPERIMENT_PROCEDURE.md`, matched to what the recorder runs.
 - The app stops its headband helper and waits for it to exit (force-quitting after 5 s) before launching the recorder, because the Muse 2 accepts one Bluetooth connection at a time.
 - Esc, or Stop and Save (with a confirmation), ends the session and keeps everything recorded so far. The helper also saves if it receives SIGTERM/SIGINT, its stdin closes, or the app quits. `incomplete` (reader or disk failure) shows as a failure with the reason. If no `eeg_data_*.csv` was written, the session is not marked collected and the user can try again.
 
+### 6.7a Part 2: forward walking imagery
+
+Goal: every participant imagines the same movement, not their own idea of "moving forward".
+
+1. **Script** (about 10 s): one fixed spoken script, the same for everyone: "Now imagine walking forward. Feel your own legs step, one step per tone. Don't picture gliding or the room moving. Keep your real legs still. Let's practice once." Trial cues are "Walk. One step per tone." and "Relax. Stay still." the first time, then one word. A walking guide (figure plus Left/Right feet lighting in turn) shows the rhythm.
+2. **Practice and explain-back** (about 1–2 min): one unrecorded 4 s Walk trial with one tone per second (if practice is set above one, a silent 4 s Relax separates the walks). The participant then tells the researcher what they imagined. The researcher clicks **Matches** (own legs stepping, own viewpoint) or **Does Not Match** (gliding, room moving, watching themselves, no legs), which replays the script and practice. After 3 non-matching attempts the session continues and is flagged.
+3. **Record and check** (about 3–4 min for 20 + 20): Walk and Relax trials alternate (Walk, Relax, Walk, …), each 4 s, with no break between them; Relax is the gap between Walks. Only Walk has step tones; Relax is silent. Both use the same screen (cue word over a fixation cross). The first Walk and Relax cues are full sentences, later ones one word. Afterwards the participant answers: what did you imagine (own legs stepping / gliding / scenery moving / watching myself / something else / lost focus) and vividness 1–5.
+
+Trial rows: `motor_imagery_forward` (label `forward`) and `baseline_quiet` (label `baseline`), block 2. Explain-back results and the post-block answers go to the helper as `{"cmd": "imagery_report", "report": {...}}` and are saved in `imagery_check_<timestamp>.json`, with `use_for_training` true only when explain-back matched, the answer was own legs stepping, and vividness was 3 or more. The admin Session Log shows Walk trials with a warning icon when a session fails those checks.
+
 ### 6.8 Collect EEG data: session saved
 
-- "Session {n} saved", imagery and blink counts, recording length.
+- "Session {n} saved", imagery, Walk + Relax, and blink counts, recording length.
 - Reminder to take off the headband. Done returns Home; Sign Out returns to Sign in.
 - No file names in user mode.
 
@@ -118,10 +130,10 @@ Condensed from `EXPERIMENT_PROCEDURE.md`, matched to what the recorder runs.
 Design reference: https://claude.ai/artifact/XeH32hFAF7HmQJvyQsWgFz
 
 - Reached from the sidebar, a "Real-time Control" button on Home, or "Try Real-time Control" on the session-saved screen. It does not require a recorded session.
-- **Get ready**: what each thought does (imagine left hand → Turn left, right hand → Turn right, deliberate blink → Select), the model choice (Group model initially selected; Train/Retrain Your Model fits the signed-in participant's saved left/right and blink recordings, then selects Your own model), and a checklist: headband sensors checked this visit, and the VR app (optional).
+- **Get ready**: what each thought does (imagine left hand → Turn left, right hand → Turn right, walking → Move forward, deliberate blink → Select), the model choice (Group model initially selected; Train/Retrain Your Model fits the signed-in participant's saved left/right and blink recordings, then selects Your own model), and a checklist: headband sensors checked this visit, and the VR app (optional).
 - The sensor check is recommended, not required. Without it the row reads "Not checked" and Check Sensors sits beside Start. Check Sensors runs the normal calibration screens; passing returns here and does not mark the recording session's calibration done. The check is remembered until sign-out.
-- **Live**: three tiles (← Left, Select, Right →) light in the action's color when recognized; a blink keeps its tile lit for 0.8 s. A confidence bar shows the recognized action's confidence, or the leading hand's confidence while resting, with a tick at the level needed, plus "Steady" when the smoother agrees. Status chips show the headband and whether the VR app is connected. Sensitivity sliders (30 to 95%, steps of 5; defaults 55% turning, 60% blink, from `eeg_to_meta/config.py`) apply on the next 100 ms tick and are remembered. Recent lists the last actions with confidence and age. Stop releases the headband and returns to Get ready. Nothing is recorded.
-- **Backend**: `macos_app/backend/realtime_control.py [--serial <serial>] --mi-threshold <0-1> --blink-threshold <0-1>`, after the app stops its calibration helper. It reuses `eeg_to_meta` (ring buffer, InferenceEngine, PredictionSmoother, and either the group model `ml_pipeline/models/realtime_models.pkl` or the selected personal model via `--model <path> --participant NN`) and serves Unity on `ws://127.0.0.1:8765` with the same frames as `python -m pipeline realtime`. To the app it prints JSON lines (`status`, `model`, `prediction` with `intent` left/right/blink/idle, `confidence`, `stable`, `leaning`, `leaning_confidence`, `vr` with the client count, `warning`, `error`); it accepts `{"cmd": "thresholds", "mi", "blink"}` and `{"cmd": "stop"}` on stdin. If port 8765 is taken, it keeps running without the VR link and says so.
+- **Live**: four tiles (← Left, ↑ Forward, Right →, Select) light in the action's color when recognized; a blink keeps its tile lit for 0.8 s. A confidence bar shows the recognized action's confidence, or the leading hand's confidence while resting, with a tick at the level needed, plus "Steady" when the smoother agrees. Status chips show the headband and whether the VR app is connected. Sensitivity sliders (30 to 95%, steps of 5; defaults 55% turning, 60% blink, from `eeg_to_meta/config.py`) apply on the next 100 ms tick and are remembered. Recent lists the last actions with confidence and age. Stop releases the headband and returns to Get ready. Nothing is recorded.
+- **Backend**: `macos_app/backend/realtime_control.py [--serial <serial>] --mi-threshold <0-1> --blink-threshold <0-1>`, after the app stops its calibration helper. It reuses `eeg_to_meta` (ring buffer, InferenceEngine, PredictionSmoother, and either the group model `ml_pipeline/models/realtime_models.pkl` or the selected personal model via `--model <path> --participant NN`) and serves Unity on `ws://127.0.0.1:8765` with the same frames as `python -m pipeline realtime`. To the app it prints JSON lines (`status`, `model`, `prediction` with `intent` left/right/forward/blink/idle; forward appears only with a model that has an `mi_forward` class, `confidence`, `stable`, `leaning`, `leaning_confidence`, `vr` with the client count, `warning`, `error`); it accepts `{"cmd": "thresholds", "mi", "blink"}` and `{"cmd": "stop"}` on stdin. If port 8765 is taken, it keeps running without the VR link and says so.
 
 ## 7. Admin mode
 
@@ -132,8 +144,8 @@ Design reference: https://claude.ai/artifact/XeH32hFAF7HmQJvyQsWgFz
 
 ## 8. Data
 
-- Local database: SwiftData. `Participant` (first name, last name, subject number, age, writing hand, created date) and `SessionRecord` (number, dates, calibration done, collection done, trial counts, file names).
-- Each participant maps to `<repo>/data/subNN/`, the layout the Python pipeline already uses. The recorder writes `eeg_data_*.csv`, `trial_log_*.csv` and `metadata.yaml` there. The trial log schema is unchanged.
+- Local database: SwiftData. `Participant` (first name, last name, subject number, age, writing hand, created date) and `SessionRecord` (number, dates, calibration done, collection done, trial counts, file names, forward imagery checks: explain-back result and attempts, reported strategy, vividness).
+- Each participant maps to `<repo>/data/subNN/`, the layout the Python pipeline already uses. The recorder writes `eeg_data_*.csv`, `trial_log_*.csv`, `imagery_check_*.json` and `metadata.yaml` there. The trial log schema is unchanged.
 - The recorder rewrites `metadata.yaml` on every run, so the app keeps age and writing hand in its own database and does not edit `metadata.yaml`.
 - Sessions completed = the count of `eeg_data_*.csv` files in the participant's folder, which covers sessions recorded before the app existed.
 

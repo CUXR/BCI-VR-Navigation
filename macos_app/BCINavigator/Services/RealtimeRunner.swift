@@ -19,7 +19,7 @@ final class RealtimeRunner {
     }
 
     enum Intent: String {
-        case left, right, blink, idle
+        case left, right, forward, blink, idle
     }
 
     struct Action: Identifiable, Equatable {
@@ -262,7 +262,7 @@ final class RealtimeRunner {
             lastBlinkAt = .now
             lastBlinkConfidence = value
             log(.blink, value)
-        case .left, .right:
+        case .left, .right, .forward:
             if stable && next != lastLogged {
                 log(next, value)
                 lastLogged = next

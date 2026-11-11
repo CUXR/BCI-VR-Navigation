@@ -5,6 +5,7 @@ private extension RealtimeRunner.Intent {
         switch self {
         case .left: Color(red: 0.0, green: 0.38, blue: 0.80)
         case .right: Color(red: 0.71, green: 0.28, blue: 0.05)
+        case .forward: Color(red: 0.42, green: 0.25, blue: 0.75)
         case .blink, .idle: Color(red: 0.11, green: 0.11, blue: 0.12)
         }
     }
@@ -13,6 +14,7 @@ private extension RealtimeRunner.Intent {
         switch self {
         case .left: "Turn left"
         case .right: "Turn right"
+        case .forward: "Move forward"
         case .blink: "Select"
         case .idle: "Rest"
         }
@@ -31,6 +33,7 @@ struct RealtimeIntroView: View {
             HStack(alignment: .top, spacing: 14) {
                 MappingCard(thought: "Imagine your left hand", action: "Turn left", note: "Like the \"Grab left\" trials.", color: RealtimeRunner.Intent.left.color)
                 MappingCard(thought: "Imagine your right hand", action: "Turn right", note: "Like the \"Grab right\" trials.", color: RealtimeRunner.Intent.right.color)
+                MappingCard(thought: "Imagine walking forward", action: "Move forward", note: "Like the \"Walk\" trials. Train Your Model after recording them.", color: RealtimeRunner.Intent.forward.color)
                 MappingCard(thought: "Blink once, on purpose", action: "Select", note: "Normal blinking is ignored.", color: .primary)
             }
             VStack(alignment: .leading, spacing: 12) {
@@ -43,7 +46,7 @@ struct RealtimeIntroView: View {
                 Button { model.usePersonalModel = true } label: {
                     ModelOption(title: "Your own model",
                                 detail: model.trainer.modelURL == nil
-                                    ? "Train on your saved hand and blink recordings."
+                                    ? "Train on your saved hand, walking, and blink recordings."
                                     : "Ready to use. Retrain after collecting more recordings.",
                                 selected: model.usePersonalModel)
                 }
@@ -335,7 +338,7 @@ private struct RecognitionCard: View {
 
     private var active: RealtimeRunner.Intent {
         if showingBlink { return .blink }
-        return runner.intent == .left || runner.intent == .right ? runner.intent : .idle
+        return [.left, .right, .forward].contains(runner.intent) ? runner.intent : .idle
     }
 
     var body: some View {
@@ -346,8 +349,9 @@ private struct RecognitionCard: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
                 Tile(title: "← Left", detail: "Imagine left hand", intent: .left, on: active == .left)
-                Tile(title: "Select", detail: "Blink on purpose", intent: .blink, on: active == .blink)
+                Tile(title: "↑ Forward", detail: "Imagine walking", intent: .forward, on: active == .forward)
                 Tile(title: "Right →", detail: "Imagine right hand", intent: .right, on: active == .right)
+                Tile(title: "Select", detail: "Blink on purpose", intent: .blink, on: active == .blink)
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -389,6 +393,7 @@ private struct RecognitionCard: View {
         switch active {
         case .left: "Turning left"
         case .right: "Turning right"
+        case .forward: "Moving forward"
         case .blink: "Select"
         case .idle: "Resting"
         }
@@ -397,13 +402,13 @@ private struct RecognitionCard: View {
     private func helper(_ active: RealtimeRunner.Intent, need: Double) -> String {
         let percent = Int((need * 100).rounded())
         switch active {
-        case .left, .right, .blink:
+        case .left, .right, .forward, .blink:
             return runner.vrConnected ? "Sent to the VR app." : "Recognized. Open the VR app to move with it."
         case .idle:
             if let leaning = runner.leaning, runner.leaningConfidence > 0 {
-                return "Leaning \(leaning.rawValue) at \(Int((runner.leaningConfidence * 100).rounded()))%. Turning needs \(percent)%."
+                return "Leaning \(leaning.rawValue) at \(Int((runner.leaningConfidence * 100).rounded()))%. Moving needs \(percent)%."
             }
-            return "Nothing recognized. Relax, then imagine one hand reaching out to turn."
+            return "Nothing recognized. Relax, then imagine one hand reaching out to turn, or your legs walking to move forward."
         }
     }
 }

@@ -225,6 +225,12 @@ final class AppModel {
         session.recordingEndedAt = recorder.endedAt
         session.imageryTrials = recorder.imageryDone
         session.blinks = recorder.blinksDone
+        session.forwardTrials = recorder.forwardDone
+        session.relaxTrials = recorder.relaxDone
+        session.explainBackPassed = recorder.explainBackPassed
+        session.explainBackAttempts = recorder.explainBackAttempts
+        session.forwardStrategyRaw = recorder.forwardStrategy?.rawValue
+        session.forwardVividness = recorder.forwardVividness
         session.eegFile = recorder.eegFile
         session.trialLogFile = recorder.trialLogFile
         try? context.save()
@@ -294,8 +300,10 @@ final class AppModel {
         case .calibration: session?.calibrationDone == true ? "All sensors green" : "Fit headband, check sensors"
         case .collect:
             if session?.collectionDone == true { "Saved" }
-            else if recorder.isRunning { "Recording, \(recorder.imageryDone + recorder.blinksDone) of \(recorder.imageryTarget + recorder.blinkTarget) trials" }
-            else { "About 5 to 10 minutes" }
+            else if recorder.isRunning {
+                "Recording, \(recorder.imageryDone + recorder.forwardDone + recorder.relaxDone + recorder.blinksDone) of \(recorder.imageryTarget + recorder.forwardTarget + recorder.blinkTarget) trials"
+            }
+            else { "About 10 to 15 minutes" }
         case .realtime:
             if realtime.isRunning { realtime.vrConnected ? "Live · VR app connected" : "Live · VR app not open" }
             else { "Turn and select with your mind" }

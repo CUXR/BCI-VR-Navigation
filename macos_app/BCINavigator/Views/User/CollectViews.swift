@@ -5,7 +5,7 @@ struct CollectIntroView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        ScreenScaffold(width: 800) {
+        ScreenScaffold(width: 960) {
             ScreenHeader(
                 eyebrow: "Collect EEG data",
                 title: "Here is what you will do",
@@ -19,7 +19,16 @@ struct CollectIntroView: View {
                                          set: { model.recorder.rounds = Int($0) / 2 }),
                          range: 2...100, step: 2,
                          trialHint: "\(model.recorder.rounds) trials per hand")
-                PartCard(part: "Part 2 · \(model.recorder.blinkTarget) trials", title: "Blink on purpose",
+                PartCard(part: "Part 2 · \(model.recorder.forwardTarget) trials", title: "Imagine walking forward",
+                         text: "You will hear a short script, practice \(model.recorder.practiceTrials == 1 ? "once" : "\(model.recorder.practiceTrials) times"), and tell the researcher what you imagined. Then Walk and Relax alternate: on \"Walk\", feel your own legs stepping, one step per tone. On \"Relax\", rest.",
+                         key: nil, keyHint: "Nothing to press. Trials end on their own.",
+                         trials: Binding(get: { Double(model.recorder.forwardTrials) },
+                                         set: { model.recorder.forwardTrials = Int($0) }),
+                         range: 0...50, step: 1,
+                         trialHint: model.recorder.forwardTrials == 0
+                             ? "Skipped"
+                             : "\(model.recorder.forwardTrials) Walk + \(model.recorder.forwardTrials) Relax, alternating")
+                PartCard(part: "Part 3 · \(model.recorder.blinkTarget) trials", title: "Blink on purpose",
                          text: "Blink once, deliberately, and press the key at the same moment. Repeat until the counter reaches \(model.recorder.blinkTarget).",
                          key: "B", keyHint: "at the same moment you blink",
                          trials: Binding(get: { Double(model.recorder.blinkTarget) },
@@ -32,6 +41,7 @@ struct CollectIntroView: View {
                     "Sit comfortably with your forearms resting on the table.",
                     "A cup sits about 5 cm from each hand, where you can see it.",
                     "Raise your chin slightly and keep your head still. Moving your eyes is fine.",
+                    "Keep both feet flat on the floor. In Part 2, imagine walking but keep your legs still.",
                     "After you press Start, the app connects to the headband. Press Enter when you are ready to begin.",
                 ], id: \.self) { line in
                     Label(line, systemImage: "circle.fill")
@@ -69,7 +79,7 @@ private struct PartCard: View {
     var part: String
     var title: String
     var text: String
-    var key: String
+    var key: String?
     var keyHint: String
     @Binding var trials: Double
     var range: ClosedRange<Double>
@@ -90,7 +100,7 @@ private struct PartCard: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 10) {
-                KeyCap(key: key)
+                if let key { KeyCap(key: key) }
                 Text(keyHint)
             }
         }
@@ -239,13 +249,20 @@ struct RecordingView: View {
         CueStage(recorder: recorder)
             .frame(maxWidth: .infinity, minHeight: 340)
             .card(padding: 24)
+        let imageryComplete = recorder.imageryDone >= recorder.imageryTarget
+        let forwardComplete = recorder.forwardDone + recorder.relaxDone >= recorder.forwardTarget
         HStack(alignment: .top, spacing: 28) {
-            PartProgress(title: "Part 1 · Imagine grabbing", done: recorder.imageryDone,
+            PartProgress(title: "Part 1 · Grabbing", done: recorder.imageryDone,
                          total: recorder.imageryTarget, detail: nil,
-                         active: recorder.imageryDone < recorder.imageryTarget)
-            PartProgress(title: "Part 2 · Blink on purpose", done: recorder.blinksDone,
+                         active: !imageryComplete)
+            if recorder.forwardTarget > 0 {
+                PartProgress(title: "Part 2 · Walking", done: recorder.forwardDone + recorder.relaxDone,
+                             total: recorder.forwardTarget, detail: nil,
+                             active: imageryComplete && !forwardComplete)
+            }
+            PartProgress(title: "Part \(recorder.forwardTarget > 0 ? 3 : 2) · Blinks", done: recorder.blinksDone,
                          total: recorder.blinkTarget, detail: nil,
-                         active: recorder.imageryDone >= recorder.imageryTarget)
+                         active: imageryComplete && forwardComplete)
         }
         .card(padding: 20)
     }
@@ -309,11 +326,46 @@ private struct CueStage: View {
                         .font(.system(size: 96, weight: .bold)).monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
-                Text("Rest. Relax and get ready for the next one.")
+                Text("Short break. Get ready for the next one.")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.secondary)
+            case .forwardScript:
+                WalkingGuide(stepCount: nil)
+                Text("Listen, and imagine it as you hear it")
+                    .font(.system(size: 24, weight: .bold))
+                Text("Part 2 · Feel your own legs walking, one step per tone")
+                    .font(.system(size: 16)).foregroundStyle(.secondary)
+            case .practicing(.walk, let trial, _):
+                WalkingGuide(stepCount: recorder.stepCount)
+                Text("Practice \(trial) of \(recorder.practiceTrials) · Feel your legs step with each tone")
+                    .font(.system(size: 20, weight: .semibold))
+                Text("Nothing is recorded yet. Keep your real legs still.")
+                    .font(.system(size: 16)).foregroundStyle(.secondary)
+            case .practicing(.relax, _, _):
+                Text("RELAX").font(.system(size: 44, weight: .heavy)).foregroundStyle(Self.forwardColor)
+                Text("Keep still and let your mind rest. Practice continues in a moment.")
+                    .font(.system(size: 18, weight: .semibold))
+            case .explainBack(let attempt):
+                ExplainBackPanel(recorder: recorder, attempt: attempt)
+            case .forwardListening(let cue):
+                listening(title: recorder.forwardIndex == 0
+                              ? "Practice · \(cue.title)"
+                              : "Part 2 · Trial \(recorder.forwardIndex) of \(recorder.forwardTarget) · \(cue.title)",
+                          color: Self.forwardColor)
+            case .forwardTrial(let cue, _):
+                // Same layout for Walk and Relax, so only the imagery differs between them.
+                Text(cue.title.uppercased())
+                    .font(.system(size: 44, weight: .heavy))
+                    .foregroundStyle(Self.forwardColor)
+                Text("+").font(.system(size: 96, weight: .light)).foregroundStyle(.secondary)
+                Text(cue == .walk ? "Feel your own legs walking, one step per tone." : "Keep still and let your mind rest.")
+                    .font(.system(size: 18, weight: .semibold))
+                Text("Look at the cross. The trial ends on its own.")
+                    .font(.system(size: 15)).foregroundStyle(.secondary)
+            case .forwardCheck:
+                ForwardCheckForm(recorder: recorder)
             case .blinkIntro:
-                listening(title: "Part 2 · Blink on purpose", color: Palette.adjust)
+                listening(title: "Part \(recorder.forwardTarget > 0 ? 3 : 2) · Blink on purpose", color: Palette.adjust)
             case .blinking:
                 Text("\(recorder.blinksDone) of \(recorder.blinkTarget)")
                     .font(.system(size: 72, weight: .bold)).monospacedDigit()
@@ -349,6 +401,8 @@ private struct CueStage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeOut(duration: 0.15), value: recorder.phase)
     }
+
+    static let forwardColor = Color(red: 0.42, green: 0.25, blue: 0.75)
 
     private func listening(title: String, color: Color) -> some View {
         VStack(spacing: 14) {
@@ -408,6 +462,9 @@ struct SessionDoneView: View {
                     }
                     HStack(spacing: 14) {
                         DoneStat(label: "Imagery trials", value: "\(session.imageryTrials) / \(model.recorder.imageryTarget)")
+                        if model.recorder.forwardTarget > 0 {
+                            DoneStat(label: "Walk + Relax", value: "\(session.forwardTrials + session.relaxTrials) / \(model.recorder.forwardTarget)")
+                        }
                         DoneStat(label: "Blinks", value: "\(session.blinks) / \(model.recorder.blinkTarget)")
                         DoneStat(label: "Time", value: session.recordingLength.map(Self.format) ?? "–")
                     }
@@ -445,5 +502,116 @@ private struct DoneStat: View {
             Text(value).font(.system(size: 30, weight: .bold)).monospacedDigit()
         }
         .card(padding: 18)
+    }
+}
+
+/// The reference for Part 2: a walking figure with Left/Right feet that light in turn.
+/// With `stepCount` nil it paces itself at one step per second to demonstrate the rhythm.
+private struct WalkingGuide: View {
+    var stepCount: Int?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let step = stepCount ?? Int(context.date.timeIntervalSinceReferenceDate)
+            let leftActive = step % 2 == 1
+            HStack(spacing: 28) {
+                foot("Left", active: leftActive)
+                Image(systemName: "figure.walk")
+                    .font(.system(size: 96))
+                    .foregroundStyle(CueStage.forwardColor)
+                foot("Right", active: !leftActive && step > 0)
+            }
+        }
+        .accessibilityLabel("Walking guide: one step per tone, left then right")
+    }
+
+    private func foot(_ name: String, active: Bool) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: "shoeprints.fill")
+                .font(.system(size: 34))
+                .scaleEffect(x: name == "Left" ? -1 : 1)
+            Text(name).font(.system(size: 14, weight: .semibold))
+        }
+        .foregroundStyle(active ? CueStage.forwardColor : Color(white: 0.75))
+        .animation(.easeOut(duration: 0.15), value: active)
+    }
+}
+
+/// Explain-back: the participant describes what they imagined; the researcher compares it to the script.
+private struct ExplainBackPanel: View {
+    var recorder: RecorderRunner
+    var attempt: Int
+
+    var body: some View {
+        let lastAttempt = attempt >= recorder.maxExplainBackAttempts
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Tell the researcher what you imagined")
+                .font(.system(size: 26, weight: .bold))
+            Text("Describe it in your own words, step by step.")
+                .font(.system(size: 17)).foregroundStyle(.secondary)
+            Divider()
+            Text("For the researcher · attempt \(attempt) of \(recorder.maxExplainBackAttempts)")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+            Label("Matches: they felt their own legs stepping, seen from their own eyes.", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(Palette.good)
+            Label("Does not match: gliding or floating, the room moving, watching themselves, or no legs.", systemImage: "xmark.circle.fill")
+                .foregroundStyle(Palette.bad)
+            HStack {
+                Button(lastAttempt ? "Does Not Match, Continue (Flagged)" : "Does Not Match, Practice Again") {
+                    recorder.judgeExplainBack(matches: false)
+                }
+                Spacer()
+                Button("Matches, Start Recording") { recorder.judgeExplainBack(matches: true) }
+                    .buttonStyle(.borderedProminent)
+            }
+            .controlSize(.large)
+            .disabled(!recorder.isAwaitingInput)
+        }
+        .font(.system(size: 15))
+        .frame(maxWidth: 600)
+    }
+}
+
+/// Post-block check for Part 2: what was imagined, and how vividly.
+private struct ForwardCheckForm: View {
+    var recorder: RecorderRunner
+    @State private var strategy: ImageryStrategy?
+    @State private var vividness: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("During the Walk trials, what did you imagine?")
+                .font(.system(size: 20, weight: .bold))
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 8) {
+                ForEach(ImageryStrategy.allCases) { option in
+                    Toggle(option.label, isOn: Binding(get: { strategy == option }, set: { if $0 { strategy = option } }))
+                        .toggleStyle(.button)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Text("How vivid was it?")
+                .font(.system(size: 20, weight: .bold))
+            HStack(spacing: 8) {
+                Text("1 · barely").foregroundStyle(.secondary)
+                Picker("Vividness", selection: $vividness) {
+                    ForEach(1...5, id: \.self) { Text("\($0)").tag(Int?.some($0)) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 260)
+                Text("5 · like really walking").foregroundStyle(.secondary)
+            }
+            HStack {
+                Spacer()
+                Button("Continue") {
+                    if let strategy, let vividness { recorder.submitForwardCheck(strategy: strategy, vividness: vividness) }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(strategy == nil || vividness == nil || !recorder.isAwaitingInput)
+            }
+        }
+        .font(.system(size: 15))
+        .frame(maxWidth: 620)
     }
 }

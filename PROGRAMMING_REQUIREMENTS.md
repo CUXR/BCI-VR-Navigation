@@ -53,6 +53,13 @@ event_marker: null (or cue_onset_timestamp)
 duration: end_time - start_time
 ```
 
+**Forward walking imagery** (`motor_imagery_forward`, label `forward`) uses the same row shape, but the
+trial has a fixed length (4 s by default, paced by one tone per imagined step) instead of ending on Space.
+It is recorded in a randomized, balanced order with `baseline_quiet` "Relax" trials of the same length
+and the same tones. Every participant hears one fixed script ("feel your own legs walking, one step per
+tone"), practices, and passes an explain-back check first. The check answers are saved per session in
+`imagery_check_YYYYMMDD_HHMMSS.json` next to the trial log; filter forward trials on them before training.
+
 ### 2. Blink Trials
 
 **Trial Type**: `blink_intentional`
