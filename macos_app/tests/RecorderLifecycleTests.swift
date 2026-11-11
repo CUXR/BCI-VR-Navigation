@@ -57,13 +57,28 @@ import SwiftData
         let recorder = model.recorder
         recorder.speakOverride = { _ in }
         recorder.restSeconds = 0.01
+        recorder.toneOverride = {}
 
         model.signIn(firstName: "Review", lastName: "Fixture", context: container.mainContext)
         model.resumeSession(context: container.mainContext)
 
-        precondition(recorder.imageryTarget == 20 && recorder.blinkTarget == 10)
+        precondition(recorder.imageryTarget == 20 && recorder.blinkTarget == 10 && recorder.forwardTarget == 40)
         recorder.rounds = 3
         recorder.blinkTarget = 4
+        recorder.forwardTrials = 2
+        recorder.practiceTrials = 2
+        recorder.maxExplainBackAttempts = 2
+        recorder.forwardTrialSeconds = 0.05
+        recorder.stepInterval = 0.01
+        var tones = 0
+        var relaxTones = 0
+        recorder.toneOverride = {
+            tones += 1
+            switch recorder.phase {
+            case .forwardTrial(.relax, _), .practicing(.relax, _, _): relaxTones += 1
+            default: break
+            }
+        }
         var instructions: [String] = []
         recorder.speakOverride = { instructions.append($0) }
 
@@ -90,7 +105,23 @@ import SwiftData
             recorder.pressSpace()  // A double press must not end the trial twice.
             recorder.pressSpace()
         }
+        // Part 2: the researcher rejects the first explain-back, so the script and practice repeat.
+        try await waitUntil("explain-back 1") { recorder.phase == .explainBack(attempt: 1) && recorder.isAwaitingInput }
+        precondition(recorder.forwardDone == 0 && recorder.relaxDone == 0, "Practice must not be recorded")
+        recorder.submitForwardCheck(strategy: .ownLegs, vividness: 4) // Ignored outside the check.
+        recorder.judgeExplainBack(matches: false)
+        try await waitUntil("explain-back 2") { recorder.phase == .explainBack(attempt: 2) && recorder.isAwaitingInput }
+        recorder.judgeExplainBack(matches: true)
+        recorder.judgeExplainBack(matches: true) // A double click must not skip ahead.
+        try await waitUntil("forward check") { recorder.phase == .forwardCheck && recorder.isAwaitingInput }
+        try await waitUntil("Walk and Relax trials confirmed") { recorder.forwardDone == 2 && recorder.relaxDone == 2 }
+        precondition(recorder.explainBackPassed == true && recorder.explainBackAttempts == 2)
+        recorder.submitForwardCheck(strategy: .ownLegs, vividness: 9) // Out of range is ignored.
+        precondition(recorder.phase == .forwardCheck)
+        recorder.submitForwardCheck(strategy: .ownLegs, vividness: 4)
         try await waitUntil("blink block") { recorder.phase == .blinking }
+        precondition(tones >= 6, "Practice and recorded Walk trials must pace steps with tones")
+        precondition(relaxTones == 0, "Relax must be silent")
         precondition(recorder.imageryDone == recorder.imageryTarget, "Every imagery trial must be confirmed")
         for blink in 0..<recorder.blinkTarget {
             recorder.pressBlink()
@@ -105,20 +136,36 @@ import SwiftData
         let commands = try String(contentsOf: root.appending(path: "commands.jsonl"), encoding: .utf8)
             .split(separator: "\n").map { try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any] }
         let names = commands.map { $0["cmd"] as! String }
-        precondition(names.filter { $0 == "start_trial" }.count == recorder.imageryTarget)
-        precondition(names.filter { $0 == "end_trial" }.count == recorder.imageryTarget, "Early Space must not end a trial")
+        let trialCount = recorder.imageryTarget + recorder.forwardTarget
+        precondition(names.filter { $0 == "start_trial" }.count == trialCount)
+        precondition(names.filter { $0 == "end_trial" }.count == trialCount, "Early Space must not end a trial")
+        let reports = commands.compactMap { $0["report"] as? [String: Any] }
+        precondition(reports.map { $0["kind"] as! String } == ["explain_back", "explain_back", "block_check"])
+        precondition(reports[0]["matched"] as? Bool == false && reports[0]["flagged"] as? Bool == false)
+        precondition(reports[1]["matched"] as? Bool == true)
+        precondition(reports[2]["strategy"] as? String == "own_legs_stepping" && reports[2]["vividness"] as? Int == 4
+                     && reports[2]["use_for_training"] as? Bool == true)
         precondition(names.filter { $0 == "blink" }.count == recorder.blinkTarget)
         let types = commands.compactMap { $0["trial_type"] as? String }
         precondition(types.prefix(2) == ["motor_imagery_left", "motor_imagery_right"], "Trials alternate left, right")
 
         precondition(types.filter { $0 == "motor_imagery_left" }.count == 3)
         precondition(types.filter { $0 == "motor_imagery_right" }.count == 3)
+        precondition(types.filter { $0 == "motor_imagery_forward" }.count == 2)
+        precondition(types.filter { $0 == "baseline_quiet" }.count == 2)
+        precondition(Array(types.suffix(4)) == ["motor_imagery_forward", "baseline_quiet", "motor_imagery_forward", "baseline_quiet"],
+                     "Walk and Relax must alternate")
+        precondition(instructions.filter { $0 == recorder.forwardScript }.count == 1
+                     && instructions.contains(RecorderRunner.repeatPrefix + recorder.forwardScript),
+                     "Everyone hears the same script; a failed explain-back replays it")
         precondition(instructions.contains(recorder.blinkInstruction))
         precondition(recorder.blinkInstruction.contains("reaches 4."))
 
         model.recordingEnded(context: container.mainContext)
         precondition(model.session?.collectionDone == true && model.screen == .done)
         precondition(model.session?.imageryTrials == 6 && model.session?.blinks == 4)
+        precondition(model.session?.forwardTrials == 2 && model.session?.relaxTrials == 2
+                     && model.session?.forwardUsable == true && model.session?.explainBackAttempts == 2)
         model.signOut()
         precondition(model.participant == nil, "Sign-out should work after recording finishes")
 
@@ -145,7 +192,7 @@ import SwiftData
         try await waitUntil("cancelled") { !recorder.isRunning }
         precondition(recorder.phase == .finished(saved: false), "Cancel before Start must not claim a save")
 
-        print("PASS: startup lock, single launch, full protocol, timestamps, Esc save, cancel, session save, sign-out")
+        print("PASS: startup lock, single launch, full protocol, forward walking part with explain-back retry and check, timestamps, Esc save, cancel, session save, sign-out")
     }
 
     @MainActor static func waitUntil(_ what: String, timeout: Duration = .seconds(10),

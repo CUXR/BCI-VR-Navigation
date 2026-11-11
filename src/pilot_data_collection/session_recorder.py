@@ -25,6 +25,7 @@ class TrialType(Enum):
     """Trial types matching PROGRAMMING_REQUIREMENTS.md"""
     MOTOR_IMAGERY_LEFT = "motor_imagery_left"
     MOTOR_IMAGERY_RIGHT = "motor_imagery_right"
+    MOTOR_IMAGERY_FORWARD = "motor_imagery_forward"
     BLINK_INTENTIONAL = "blink_intentional"
     BASELINE_QUIET = "baseline_quiet"
     BASELINE_ACTIVE = "baseline_active"
@@ -65,6 +66,7 @@ class Trial:
         label_map = {
             TrialType.MOTOR_IMAGERY_LEFT: "left",
             TrialType.MOTOR_IMAGERY_RIGHT: "right",
+            TrialType.MOTOR_IMAGERY_FORWARD: "forward",
             TrialType.BLINK_INTENTIONAL: "blink",
             TrialType.BASELINE_QUIET: "baseline",
             TrialType.BASELINE_ACTIVE: "baseline",
@@ -137,6 +139,8 @@ class SessionRecorder:
         self.eeg_output_file = os.path.join(output_dir, f"eeg_data_{timestamp}.csv")
         self.trial_log_file = os.path.join(output_dir, f"trial_log_{timestamp}.csv")
         self.quality_output_file = os.path.join(output_dir, f"signal_quality_{timestamp}.jsonl")
+        # Forward-walking imagery check answers (explain-back and post-block questions).
+        self.imagery_check_file = os.path.join(output_dir, f"imagery_check_{timestamp}.json")
         
         self.board = None
         self.is_streaming = False

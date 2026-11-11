@@ -143,7 +143,7 @@ def _resample_if_needed(data_2d, sfreq_orig, sfreq_target=None):
 # ═══════════════════════════════════════════════════════════════════
 
 def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True,
-                      reject_signal_quality=True):
+                      reject_signal_quality=True, label_map=None):
     """Extract and preprocess motor imagery epochs.
 
     Args:
@@ -152,6 +152,7 @@ def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True
         sfreq: sampling frequency
         ch_indices: which channels to use (default: all 4)
         reject_signal_quality: reject noisy/flat epochs (disabled for app personal training)
+        label_map: trial_type -> int label for the trials to extract (default: left/right)
 
     Returns:
         epochs: list of (n_channels, n_samples) arrays — fixed length
@@ -161,7 +162,9 @@ def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True
     if ch_indices is None:
         ch_indices = list(range(len(CH_COLS)))
 
-    mi_trials = trials_df[trials_df["trial_type"].isin(MI_TYPES)]
+    if label_map is None:
+        label_map = {t: LABEL_MAP[t] for t in MI_TYPES}
+    mi_trials = trials_df[trials_df["trial_type"].isin(label_map)]
     fixed_samples = int(MI_EPOCH_FIXED_S * TARGET_SFREQ)
     min_samples = int(MI_EPOCH_MIN_S * sfreq)
 
@@ -205,7 +208,7 @@ def extract_mi_epochs(eeg_df, trials_df, sfreq, ch_indices=None, *, use_asr=True
         if reject_signal_quality and np.any(stds[ch_quality] < FLAT_THRESHOLD_UV):
             continue
 
-        label = LABEL_MAP[trial["trial_type"]]
+        label = label_map[trial["trial_type"]]
         epochs.append(cleaned)
         labels.append(label)
         meta.append({

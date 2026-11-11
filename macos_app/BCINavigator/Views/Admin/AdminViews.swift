@@ -180,6 +180,20 @@ struct AdminSessionLogView: View {
             .width(70)
             TableColumn("Imagery") { Text("\($0.imageryTrials)").monospacedDigit() }.width(60)
             TableColumn("Blinks") { Text("\($0.blinks)").monospacedDigit() }.width(50)
+            TableColumn("Walk") { s in
+                HStack(spacing: 4) {
+                    Text("\(s.forwardTrials)").monospacedDigit()
+                    if s.forwardTrials > 0 && !s.forwardUsable {
+                        let reason = s.explainBackPassed != true ? "Explain-back did not match the script"
+                            : "Reported \(s.forwardStrategy?.label.lowercased() ?? "no answer"), vividness \(s.forwardVividness.map(String.init) ?? "–")"
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Palette.adjust)
+                            .help(reason)
+                            .accessibilityLabel(reason)
+                    }
+                }
+            }
+            .width(60)
             TableColumn("Files") { s in
                 HStack {
                     Text([s.eegFile, s.trialLogFile].compactMap { $0.map { URL(fileURLWithPath: $0).lastPathComponent } }.joined(separator: ", "))

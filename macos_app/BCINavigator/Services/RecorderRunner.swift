@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -5,8 +6,25 @@ import Observation
 /// key presses, rests, and progress. The headless helper `macos_app/backend/muse_session_recorder.py`
 /// owns the Muse connection and writes the EEG file and unified trial log; this class sends it
 /// one JSON command per event, stamped with the moment it happened on the system clock.
+///
+/// Protocol: Part 1 left/right imagery, Part 2 forward walking imagery (fixed script, practice,
+/// explain-back check, then randomized Walk/Relax trials and a post-block check), Part 3 blinks.
 @Observable
 final class RecorderRunner {
+    /// Part 2 trial classes. Walk and Relax alternate with the same length; only Walk has step tones.
+    enum ForwardCue: String, CaseIterable {
+        case walk, relax
+
+        var trialType: String { self == .walk ? "motor_imagery_forward" : "baseline_quiet" }
+        var title: String { rawValue.capitalized }
+        var fullInstruction: String {
+            switch self {
+            case .walk: "Walk. One step per tone."
+            case .relax: "Relax. Stay still."
+            }
+        }
+    }
+
     enum Cue: String, CaseIterable {
         case left, right
 
@@ -32,6 +50,18 @@ final class RecorderRunner {
         /// Trial open; Space ends it.
         case imagining(Cue)
         case resting(until: Date)
+        /// Part 2: the fixed walking script is playing.
+        case forwardScript
+        /// Unrecorded practice: Walk with step tones, or the silent Relax between practice walks.
+        case practicing(ForwardCue, trial: Int, until: Date)
+        /// The participant describes what they imagined; the researcher judges it.
+        case explainBack(attempt: Int)
+        /// The spoken cue for the next recorded Walk or Relax trial is playing.
+        case forwardListening(ForwardCue)
+        /// Recorded fixed-length Walk (with step tones) or Relax (silent) trial.
+        case forwardTrial(ForwardCue, until: Date)
+        /// Post-block questions: what was imagined, and how vividly.
+        case forwardCheck
         case blinkIntro
         /// Blink block; B marks a blink, Enter finishes early.
         case blinking
@@ -43,6 +73,26 @@ final class RecorderRunner {
     var rounds = 10
     var imageryTarget: Int { rounds * 2 }
     var blinkTarget = 10
+    /// Recorded Walk trials in Part 2; the same number of Relax trials is added. 0 skips Part 2.
+    var forwardTrials = 20
+    var forwardTarget: Int { forwardTrials * 2 }
+    var practiceTrials = 1
+    var maxExplainBackAttempts = 3
+    /// Length of each Walk, Relax, and practice trial.
+    var forwardTrialSeconds: TimeInterval = 4
+    /// One tone, and one imagined step, per interval.
+    var stepInterval: TimeInterval = 1
+
+    /// Every participant hears exactly this script, so everyone imagines the same movement.
+    var forwardScript: String {
+        "Now imagine walking forward. Feel your own legs step, one step per tone. "
+            + "Don't picture gliding or the room moving. Keep your real legs still. "
+            + (practiceTrials == 1 ? "Let's practice once." : "Let's practice \(practiceTrials) times.")
+    }
+    static let repeatPrefix = "Once more. "
+    static let explainBackQuestion = "Tell the researcher what you imagined."
+    static let forwardCheckPrompt = "Answer the two questions on screen."
+
     var blinkInstruction: String {
         "Now we will record intentional blinks. Blink deliberately once, and press B at the same moment. Repeat until the counter reaches \(blinkTarget)."
     }
@@ -54,6 +104,18 @@ final class RecorderRunner {
     /// Imagery trials and blinks the helper confirmed it logged.
     private(set) var imageryDone = 0
     private(set) var blinksDone = 0
+    /// Walk and Relax trials the helper confirmed it logged.
+    private(set) var forwardDone = 0
+    private(set) var relaxDone = 0
+    /// 1-based position in the recorded Part 2 sequence.
+    private(set) var forwardIndex = 0
+    /// Counts step tones, so the on-screen guide can alternate feet in time.
+    private(set) var stepCount = 0
+    private(set) var explainBackAttempts = 0
+    /// nil until the researcher judges the explain-back; false if it never matched the script.
+    private(set) var explainBackPassed: Bool?
+    private(set) var forwardStrategy: ImageryStrategy?
+    private(set) var forwardVividness: Int?
     /// 1-based round of the imagery block.
     private(set) var round = 1
     private(set) var lastBlinkAt: Date?
@@ -71,6 +133,9 @@ final class RecorderRunner {
     var restSeconds: TimeInterval = 3
     /// Replaces the spoken cues; tests use it to skip speech.
     var speakOverride: ((String) async -> Void)?
+    /// Replaces the step tone; tests use it to stay silent.
+    var toneOverride: (() -> Void)?
+    private var explainBackDecision: Bool?
 
     private var process: Process?
     private var input: FileHandle?
@@ -98,6 +163,9 @@ final class RecorderRunner {
     var isRecording: Bool { startedAt != nil && isRunning }
 
     var canStop: Bool { isRunning && phase != .starting && phase != .saving }
+
+    /// The protocol is waiting for a key press, a researcher judgment, or the check answers.
+    var isAwaitingInput: Bool { waiter != nil }
 
     // MARK: - Lifecycle
 
@@ -196,6 +264,15 @@ final class RecorderRunner {
         endedAt = nil
         imageryDone = 0
         blinksDone = 0
+        forwardDone = 0
+        relaxDone = 0
+        forwardIndex = 0
+        stepCount = 0
+        explainBackAttempts = 0
+        explainBackPassed = nil
+        explainBackDecision = nil
+        forwardStrategy = nil
+        forwardVividness = nil
         round = 1
         lastBlinkAt = nil
         imageryReadyAt = nil
@@ -236,6 +313,21 @@ final class RecorderRunner {
         }
     }
 
+    /// The researcher's judgment of the participant's description.
+    func judgeExplainBack(matches: Bool) {
+        guard case .explainBack = phase, waiter != nil else { return }
+        explainBackDecision = matches
+        resumeWaiter(true)
+    }
+
+    /// Post-block answers for Part 2.
+    func submitForwardCheck(strategy: ImageryStrategy, vividness: Int) {
+        guard phase == .forwardCheck, waiter != nil, (1...5).contains(vividness) else { return }
+        forwardStrategy = strategy
+        forwardVividness = vividness
+        resumeWaiter(true)
+    }
+
     // MARK: - Protocol
 
     private func runProtocol() async {
@@ -260,6 +352,9 @@ final class RecorderRunner {
             }
         }
         guard await rest() else { return }
+        if forwardTrials > 0 {
+            guard await runForward(), await rest() else { return }
+        }
 
         phase = .blinkIntro
         await say(blinkInstruction)
@@ -273,6 +368,99 @@ final class RecorderRunner {
         stopping = true
         phase = .saving
         send(["cmd": "stop"])
+    }
+
+    /// Part 2: script, practice, explain-back (up to `maxExplainBackAttempts`), recorded trials
+    /// alternating Walk, Relax, Walk, Relax with no break between them, then the post-block check.
+    /// False if stopped.
+    private func runForward() async -> Bool {
+        for attempt in 1...max(1, maxExplainBackAttempts) {
+            explainBackAttempts = attempt
+            phase = .forwardScript
+            await say(attempt == 1 ? forwardScript : Self.repeatPrefix + forwardScript)
+            guard !stopping else { return false }
+            // Walk, Relax, Walk, ... ending on a Walk; Relax replaces the break between practices.
+            for index in 0..<practiceTrials {
+                for cue in index < practiceTrials - 1 ? [ForwardCue.walk, .relax] : [.walk] {
+                    phase = .forwardListening(cue)
+                    await say(index == 0 ? cue.fullInstruction : cue.title)
+                    guard !stopping else { return false }
+                    let end = Date.now + forwardTrialSeconds
+                    phase = .practicing(cue, trial: index + 1, until: end)
+                    guard await hold(until: end, tones: cue == .walk) else { return false }
+                }
+            }
+            phase = .explainBack(attempt: attempt)
+            await say(Self.explainBackQuestion)
+            explainBackDecision = nil
+            guard await waitForKey() else { return false }
+            let matched = explainBackDecision == true
+            let lastAttempt = attempt == maxExplainBackAttempts
+            sendReport([
+                "kind": "explain_back", "attempt": attempt, "matched": matched,
+                "flagged": !matched && lastAttempt, "t": Self.now(),
+            ])
+            if matched || lastAttempt {
+                explainBackPassed = matched
+                break
+            }
+        }
+
+        let order = Array(repeating: [ForwardCue.walk, .relax], count: forwardTrials).flatMap { $0 }
+        var heard: Set<ForwardCue> = []
+        for (index, cue) in order.enumerated() {
+            forwardIndex = index + 1
+            phase = .forwardListening(cue)
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !stopping else { return false }
+            await say(heard.insert(cue).inserted ? cue.fullInstruction : cue.title)
+            guard !stopping else { return false }
+            send([
+                "cmd": "start_trial", "trial_type": cue.trialType, "block": 2,
+                "notes": "\(cue == .walk ? "Forward walking imagery" : "Relax baseline") - Trial \(index + 1)",
+                "t": Self.now(),
+            ])
+            let end = Date.now + forwardTrialSeconds
+            phase = .forwardTrial(cue, until: end)
+            guard await hold(until: end, tones: cue == .walk) else { return false }
+            send(["cmd": "end_trial", "t": Self.now()])
+        }
+
+        phase = .forwardCheck
+        await say(Self.forwardCheckPrompt)
+        guard !stopping, await waitForKey(), let strategy = forwardStrategy, let vividness = forwardVividness
+        else { return false }
+        sendReport([
+            "kind": "block_check", "block": 2, "strategy": strategy.rawValue,
+            "matches_script": strategy.matchesScript, "vividness": vividness,
+            "explain_back_passed": explainBackPassed == true, "explain_back_attempts": explainBackAttempts,
+            "use_for_training": strategy.matchesScript && vividness >= 3 && explainBackPassed == true,
+            "t": Self.now(),
+        ])
+        return true
+    }
+
+    /// Waits until `end`, playing one step tone per `stepInterval` when `tones` is set. False if stopped.
+    private func hold(until end: Date, tones: Bool) async -> Bool {
+        while !stopping {
+            let now = Date.now
+            if now >= end { return true }
+            if tones {
+                tone()
+                stepCount += 1
+            }
+            try? await Task.sleep(for: .seconds(min(stepInterval, end.timeIntervalSince(now))))
+        }
+        return false
+    }
+
+    private func tone() {
+        if let toneOverride { toneOverride(); return }
+        NSSound(named: "Tink")?.play()
+    }
+
+    private func sendReport(_ report: [String: Any]) {
+        send(["cmd": "imagery_report", "report": report])
     }
 
     private func rest() async -> Bool {
@@ -365,7 +553,12 @@ final class RecorderRunner {
             startedAt = .now
             protocolTask = Task { await runProtocol() }
         case "trial_ended":
-            if (object["trial_type"] as? String)?.hasPrefix("motor_imagery") == true { imageryDone += 1 }
+            switch object["trial_type"] as? String {
+            case "motor_imagery_left", "motor_imagery_right": imageryDone += 1
+            case ForwardCue.walk.trialType: forwardDone += 1
+            case ForwardCue.relax.trialType: relaxDone += 1
+            default: break
+            }
         case "blink":
             blinksDone += 1
             lastBlinkAt = .now

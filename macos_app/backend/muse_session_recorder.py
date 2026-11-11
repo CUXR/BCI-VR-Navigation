@@ -12,6 +12,7 @@ taken by the app on the same system clock BrainFlow stamps samples with:
     {"cmd": "start_trial", "trial_type": "motor_imagery_left", "block": 1, "notes": "...", "t": 1730000000.123}
     {"cmd": "end_trial", "t": 1730000003.456}
     {"cmd": "blink", "t": 1730000010.789}
+    {"cmd": "imagery_report", "report": {...}}        append forward-imagery check answers to imagery_check_*.json
     {"cmd": "stop"}                                    save and release the headband
 
 Events go out as JSON lines on stdout:
@@ -23,6 +24,7 @@ Events go out as JSON lines on stdout:
     {"event": "trial_started", "trial_id": "trial_0001", "trial_type": "motor_imagery_left"}
     {"event": "trial_ended", "trial_id": "trial_0001", "trial_type": "motor_imagery_left", "duration": 2.31}
     {"event": "blink", "trial_id": "trial_0021", "count": 1}
+    {"event": "imagery_report", "file": "data/sub06/imagery_check_....json"}
     {"event": "warning", "message": "..."}
     {"event": "saved", "eeg_file": "data/sub06/eeg_data_....csv", "trial_log_file": "data/sub06/trial_log_....csv"}
     {"event": "incomplete", "reason": "...", "eeg_file": "..."}
@@ -93,6 +95,24 @@ class Session:
         self.recorder = recorder
         self.blinks = 0
         self.fatal = None
+        self.imagery_reports = []
+
+    def save_imagery_report(self, report):
+        """Append one check (explain-back or post-block answers) and rewrite the file atomically."""
+        if not isinstance(report, dict):
+            emit("warning", message="Ignored imagery_report: report must be an object.")
+            return
+        self.imagery_reports.append({"logged_at": time.time(), **report})
+        path = self.recorder.imagery_check_file
+        tmp = f"{path}.tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump({"session_id": self.recorder.session_id, "reports": self.imagery_reports}, f, indent=2)
+            os.replace(tmp, path)
+        except OSError as exc:
+            emit("warning", message=f"Could not save the imagery check: {exc}")
+            return
+        emit("imagery_report", file=path)
 
     def handle(self, cmd):
         name = cmd.get("cmd")
@@ -122,6 +142,8 @@ class Session:
             if trial is not None:
                 emit("trial_ended", trial_id=trial.trial_id, trial_type=trial.trial_type.value,
                      duration=round(trial.duration, 3))
+        elif name == "imagery_report":
+            self.save_imagery_report(cmd.get("report"))
         elif name == "blink":
             if recorder.add_blink_marker(at=cmd.get("t")):
                 self.blinks += 1

@@ -108,7 +108,7 @@ class AppPersonalizationTests(unittest.TestCase):
             gather_app_data(1, self.root / "data")
         message = str(caught.exception)
         self.assertIn("Saved recordings found: left: 6, right: 6, blink: 6", message)
-        self.assertIn("11 hand trials shorter", message)
+        self.assertIn("11 imagery trials shorter", message)
         self.assertIn("Usable examples (left: 1, right: 0", message)
         self.assertNotIn("signal checks", message)
         self.assertIn("1 trials without full EEG coverage", message)
@@ -198,6 +198,67 @@ assert np.isfinite(result['confidence'])
         )
         self.assertEqual(rejected.returncode, 2, rejected.stderr)
         self.assertIn("does not match your profile", json.loads(rejected.stdout)["message"])
+
+    def add_forward_block(self, *, approved_blocks):
+        """Append walking/Relax trials (4 s) in blocks 2 and 3, plus an imagery check file."""
+        eeg_path = self.subject / "eeg_data_20260101_120000.csv"
+        trial_path = self.subject / "trial_log_20260101_120000.csv"
+        eeg = pd.read_csv(eeg_path)
+        rng = np.random.default_rng(5)
+        times = 1080 + np.arange(100 * 256) / 256
+        extra = pd.DataFrame(rng.normal(0, 3, (len(times), 4)), columns=[f"EEG_{i}" for i in range(4)])
+        extra.insert(0, "timestamp", times)
+        extra["marker_code"] = np.nan
+        rows = []
+        for i in range(16):
+            start = 1082 + i * 6
+            walking = i % 2 == 0
+            if walking:
+                mask = (extra.timestamp >= start) & (extra.timestamp <= start + 4)
+                extra.loc[mask, "EEG_0"] += 12 * np.sin(2 * np.pi * 18 * extra.loc[mask, "timestamp"])
+            rows.append(dict(trial_type="motor_imagery_forward" if walking else "baseline_quiet",
+                             start_time=start, end_time=start + 4, event_marker=np.nan,
+                             block_number=2 if i < 8 else 3))
+        pd.concat([eeg, extra]).to_csv(eeg_path, index=False)
+        trials = pd.read_csv(trial_path).assign(block_number=1)
+        pd.concat([trials, pd.DataFrame(rows)]).to_csv(trial_path, index=False)
+        reports = [{"kind": "explain_back", "matched": True}]
+        reports += [{"kind": "block_check", "block": b, "use_for_training": b in approved_blocks}
+                    for b in (2, 3)]
+        (self.subject / "imagery_check_20260101_120000.json").write_text(json.dumps({"reports": reports}))
+
+    def test_forward_walking_and_relax_become_classes(self):
+        self.add_forward_block(approved_blocks={2})
+        path, summary = personalize_app(
+            participant=1, data_root=self.root / "data", output_dir=self.root / "models",
+        )
+        names = [*CLASS_NAMES, "mi_forward", "idle"]
+        self.assertEqual(summary["class_names"], names)
+        # Block 3 failed the imagery check, so only block 2's four walking trials count.
+        self.assertEqual(summary["mi_class_counts"],
+                         {"left_motor_imagery": 6, "right_motor_imagery": 6, "mi_forward": 4, "idle": 8})
+        self.assertEqual(summary["forward_excluded_by_check"], 4)
+        with path.open("rb") as f:
+            bundle = pickle.load(f)
+        self.assertEqual(bundle["class_names"], names)
+        self.assertEqual(list(bundle["mi_pipeline"].classes_), [0, 1, 2, 3])
+        self.assertEqual(bundle["mi_label_map"]["motor_imagery_forward"], 2)
+        # The live helper must accept the larger personal model (it stops on stdin EOF).
+        accepted = subprocess.run(
+            [sys.executable, str(ROOT / "macos_app/backend/realtime_control.py"),
+             "--model", str(path), "--participant", "1", "--mock", "--no-ws"],
+            input="", capture_output=True, text=True, timeout=60,
+        )
+        events = [json.loads(line) for line in accepted.stdout.splitlines() if line.strip()]
+        self.assertIn("model", [e["event"] for e in events], accepted.stderr)
+        self.assertNotIn("error", [e["event"] for e in events], events)
+
+    def test_forward_without_imagery_check_is_not_trained(self):
+        self.add_forward_block(approved_blocks=set())
+        (self.subject / "imagery_check_20260101_120000.json").unlink()
+        data = gather_app_data(1, self.root / "data")
+        self.assertEqual(data.class_names, [*CLASS_NAMES, "idle"])
+        self.assertEqual(data.forward_report["forward_excluded_by_check"], 8)
 
 
 if __name__ == "__main__":

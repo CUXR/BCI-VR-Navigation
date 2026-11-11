@@ -7,6 +7,30 @@ enum WritingHand: String, Codable, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
+/// What a participant reports imagining during the forward walking trials.
+nonisolated enum ImageryStrategy: String, Codable, CaseIterable, Identifiable, Sendable {
+    case ownLegs = "own_legs_stepping"
+    case gliding
+    case sceneryMoving = "scenery_moving"
+    case watchingSelf = "watching_self"
+    case other
+    case lostFocus = "lost_focus"
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .ownLegs: "My own legs stepping"
+        case .gliding: "Gliding or floating forward"
+        case .sceneryMoving: "The room or scenery moving"
+        case .watchingSelf: "Watching myself from outside"
+        case .other: "Something else"
+        case .lostFocus: "I lost focus"
+        }
+    }
+    /// Only this answer matches the script everyone hears.
+    var matchesScript: Bool { self == .ownLegs }
+}
+
 @Model
 final class Participant {
     var firstName: String
@@ -59,6 +83,13 @@ final class SessionRecord {
     var recordingEndedAt: Date?
     var imageryTrials: Int = 0
     var blinks: Int = 0
+    /// Part 2 forward walking imagery: recorded Walk and Relax trials and the imagery checks.
+    var forwardTrials: Int = 0
+    var relaxTrials: Int = 0
+    var explainBackPassed: Bool?
+    var explainBackAttempts: Int = 0
+    var forwardStrategyRaw: String?
+    var forwardVividness: Int?
     var eegFile: String?
     var trialLogFile: String?
     /// Muse Bluetooth name used for this session, e.g. `Muse-15C3`.
@@ -68,6 +99,13 @@ final class SessionRecord {
     init(number: Int, startedAt: Date = .now) {
         self.number = number
         self.startedAt = startedAt
+    }
+
+    var forwardStrategy: ImageryStrategy? { forwardStrategyRaw.flatMap(ImageryStrategy.init(rawValue:)) }
+
+    /// Walk trials from this session pass every check: explain-back, own-legs report, vividness 3+.
+    var forwardUsable: Bool {
+        explainBackPassed == true && forwardStrategy?.matchesScript == true && (forwardVividness ?? 0) >= 3
     }
 
     var recordingLength: TimeInterval? {

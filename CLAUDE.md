@@ -46,8 +46,9 @@ Three-layer design:
 The **unified session log** is the central design principle (see `PROGRAMMING_REQUIREMENTS.md`). Every trial is one row with consistent columns:
 
 - `trial_id`, `trial_type`, `label`, `start_time`, `end_time`, `event_marker`, `duration`, `session_id`
-- Trial types: `motor_imagery_left`, `motor_imagery_right`, `blink_intentional`, `baseline_quiet`, `baseline_active`
-- Motor imagery trials are interval-based (cue onset → spacebar press)
+- Trial types: `motor_imagery_left`, `motor_imagery_right`, `motor_imagery_forward`, `blink_intentional`, `baseline_quiet`, `baseline_active`
+- Motor imagery trials are interval-based (cue onset → spacebar press); forward trials are fixed-length (4 s), paired with `baseline_quiet` Relax trials
+- Forward-walking imagery check answers go to `imagery_check_*.json` per session
 - Blink trials are event-centered (±200ms around button press)
 
 **Never modify the trial log schema without updating both the recorder and `data/analyze_all.py`.**

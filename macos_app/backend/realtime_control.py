@@ -22,7 +22,7 @@ Events go out as JSON lines on stdout:
     {"event": "error", "message": "..."}
     {"event": "status", "state": "disconnected"}
 
-`intent` is left, right, blink, or idle. A blink is reported on the tick the model detects it
+`intent` is left, right, forward, blink, or idle (forward needs a model with an mi_forward class). A blink is reported on the tick the model detects it
 (the smoother needs 3 of 5 agreeing ticks and never holds a single-tick blink). `leaning` is the
 motor imagery class with the highest probability, even below threshold, for the confidence bar.
 
@@ -67,8 +67,20 @@ INTENTS = {
     "mi_rotate_left": "left",
     "right_motor_imagery": "right",
     "mi_rotate_right": "right",
+    "forward_motor_imagery": "forward",
+    "mi_forward": "forward",
     "intentional_blink": "blink",
 }
+
+
+APP_BASE_LABELS = ["left_motor_imagery", "right_motor_imagery"]
+APP_OPTIONAL_LABELS = ["mi_forward", "idle"]  # added when walking + Relax trials were recorded
+
+
+def app_labels_ok(names):
+    """Left/right first, then any of forward/idle in the trainer's order."""
+    extra = list(names[2:])
+    return list(names[:2]) == APP_BASE_LABELS and extra == [n for n in APP_OPTIONAL_LABELS if n in extra]
 
 
 def emit(event, **fields):
@@ -90,7 +102,7 @@ def summarize(raw, smoothed):
     leaning, leaning_conf = None, 0.0
     for key, prob in raw.get("raw_probs", {}).items():
         intent = INTENTS.get(key)
-        if intent in ("left", "right") and prob > leaning_conf:
+        if intent in ("left", "right", "forward") and prob > leaning_conf:
             leaning, leaning_conf = intent, float(prob)
     if raw["label"] == CLASS_NAMES["blink"]:
         intent, confidence, stable = "blink", float(raw["confidence"]), True
@@ -156,7 +168,7 @@ async def run(args):
     if args.participant is not None and (
         info.get("participant_id") != args.participant
         or info.get("model_version") != "personalized_app_v1"
-        or model.mi_label_names() != ["left_motor_imagery", "right_motor_imagery"]
+        or not app_labels_ok(model.mi_label_names())
     ):
         emit("error", message="This personal model does not match your profile or the app's hand controls. Retrain it from your recordings.")
         return 2
